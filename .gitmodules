@@ -1,0 +1,6 @@
+[submodule "Impl/polyglot/run_tasks/thirdparty/libspatialindex"]
+	path = Impl/polyglot/run_tasks/thirdparty/libspatialindex
+	url = git@github.com:grammaright/libspatialindex.git
+[submodule "Impl/polyglot/run_tasks/thirdparty/velocypack"]
+	path = Impl/polyglot/run_tasks/thirdparty/velocypack
+	url = https://github.com/arangodb/velocypack.git

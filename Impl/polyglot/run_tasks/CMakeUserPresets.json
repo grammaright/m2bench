@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "configurePresets": [
+    {
+      "name": "kdbs",
+      "inherits": "vcpkg",
+      "environment": {
+        "VCPKG_ROOT": "/home/grammaright/Workspace/env/vcpkg",
+        "VCPKG_TOOLCHAIN_PATH": "/home/grammaright/Workspace/env/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "PREVISION_PATH": "/media/nvme2/Workspace/mxm/tileduck/prevision",
+        "TILESTORE_BASE_DIR": "/media/nvme2/Workspace/mxm/tileduck/m2bench-improved/Impl/polyglot/run_tasks/tilestore",
+        "DUCKDB_PATH": "/media/nvme2/Workspace/mxm/tileduck/duckdb-pure"
+      }
+    }
+  ]
+}

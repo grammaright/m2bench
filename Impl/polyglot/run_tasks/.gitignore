@@ -1,0 +1,7 @@
+tilestore/*
+.env
+.vscode
+
+ecommerce
+healthcare
+disaster
