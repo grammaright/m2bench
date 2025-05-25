@@ -4,7 +4,7 @@
 #include <iostream>
 #include <string>
 
-#include "Polyglot/Tasks.h"
+#include "Polyglot/tasks.h"
 
 using namespace std;
 using std::chrono::duration;

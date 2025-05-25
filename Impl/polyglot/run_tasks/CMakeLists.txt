@@ -8,7 +8,7 @@ project(m2bench)
 
 set(CMAKE_BUILD_TYPE Debug)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories("src/include")
 
 # Boost
 find_package (Boost 1.70.0 REQUIRED COMPONENTS unit_test_framework)
@@ -47,9 +47,10 @@ link_directories("$ENV{DUCKDB_PATH}/build/release/src")
 add_executable(m2bench 
     main.cpp
 
-    src/Polyglot/Ecommerce_Tasks.cpp
-    src/Polyglot/Healthcare_Tasks.cpp
-    src/Polyglot/Disaster_Tasks.cpp
+    src/Polyglot/ecommerce_func.cpp
+    src/Polyglot/ecommerce_task.cpp
+    src/Polyglot/healthcare_task.cpp
+    src/Polyglot/disaster_task.cpp
 
     src/Connection/Connection.cpp
     src/json_udf.cpp
