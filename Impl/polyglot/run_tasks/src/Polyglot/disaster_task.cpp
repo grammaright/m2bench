@@ -22,7 +22,7 @@ PFpage *t14GetBuffer(string arrName) {
 
   BF_GetBuf(key, &page);
 
-  // delete key.arrayname;
+  delete key.arrayname;
 
   return page;
 }
@@ -38,7 +38,40 @@ void t14UnpinBuffer(string arrName) {
   key.emptytile_template = BF_EMPTYTILE_NONE;
   BF_UnpinBuf(key);
 
-  // delete key.arrayname;
+  delete key.arrayname;
+}
+
+PFpage *t15GetBuffer(string arrName) {
+  // assume that there is only one tile
+  uint64_t dcoords[] = {0, 0};
+
+  PFpage *page;
+  array_key key;
+  key.arrayname = new char[arrName.size()];
+  memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
+  key.dcoords = dcoords;
+  key.dim_len = 2;
+  key.emptytile_template = BF_EMPTYTILE_NONE;
+
+  BF_GetBuf(key, &page);
+
+  delete key.arrayname;
+
+  return page;
+}
+
+void t15UnpinBuffer(string arrName) {
+  uint64_t dcoords[] = {0, 0};
+
+  array_key key;
+  key.arrayname = new char[arrName.size()];
+  memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
+  key.dcoords = dcoords;
+  key.dim_len = 2;
+  key.emptytile_template = BF_EMPTYTILE_NONE;
+  BF_UnpinBuf(key);
+
+  delete key.arrayname;
 }
 
 void ChunkProcessing(PolyglotConnection &conn,
@@ -133,8 +166,7 @@ void T14(int z1, int z2) {
 
   dconn
       .Query(
-          "SELECT doc_make('{\"date\": ' || doc_get_int32('date', data) || ',
-          "
+          "SELECT doc_make('{\"date\": ' || doc_get_int32('date', data) || ', "
           "\"timestamp\": ' || doc_get_int32('timestamp', data) || ', "
           "\"site_id\": ' || "
           "doc_st_closest_object_id('Site_centroid', "
@@ -156,95 +188,119 @@ void T14(int z1, int z2) {
  * Document, Array) -> Relational
  *
  */
-void T15(int z1, int z2, double lon, double lat) {
-  //   size_t nrows = 0;
+void T15(int Z1, int Z2, double lon, double lat) {
+  PolyglotConnection conn(true, "disaster", true);
+  auto &dconn = conn.GetDuckdbConnection();
+  auto pvEngine = conn.GetPrevisionEngine();
 
-  //   unique_ptr<ScidbConnection> scidb(
-  //       new ScidbConnection(SCIDB_HOST_DISASTER + string(":8080")));
-  //   shared_ptr<neo4j_connector> neo4j(new neo4j_connector());
-  //   unique_ptr<mongodb_connector> mongodb(new mongodb_connector("Disaster"));
-  //   auto mdb = mongodb->db;
-  //   auto mapCollection = mdb["Site"];
+  auto finedust = prevision::OpenArray("finedust");
+  auto pm10 = prevision::Project(finedust, {0});
 
-  //   // Query A and B
-  //   int max_win_oneside = z2 - z1;
+  std::vector<uint32_t> _begin = {(uint32_t)Z1, 0, 0},
+                        _end = {(uint32_t)Z2 + 1, 523, 523},
+                        _tilesize = {(uint32_t)Z2 + 1 - Z1, 523, 523};
 
-  //   ScidbSchema hotspotSchema;
-  //   hotspotSchema.dims.push_back(ScidbDim("i", 0, INT32_MAX, 0, 1000000));
-  //   hotspotSchema.attrs.push_back(ScidbAttr("pm10_avg", DOUBLE));
-  //   hotspotSchema.attrs.push_back(ScidbAttr("latitude", INT64));
-  //   hotspotSchema.attrs.push_back(ScidbAttr("longitude", INT64));
+  auto A1 = prevision::Subarray(pm10, {_begin, _end}, _tilesize);
+  auto A2 = prevision::Stack(prevision::Sum(A1, {1, 2}),
+                             prevision::Count(A1, {1, 2}));
 
-  //   // cout << to_string(z1) << "," << to_string(z2) << "," <<
-  //   // to_string(max_win_oneside) << endl;
-  //   auto hotspot = scidb->download(
-  //       "limit(sort(redimension(apply(window(aggregate(between(Finedust, " +
-  //           to_string(z1) + ", 0, 0, " + to_string(z2) +
-  //           ", 522, 522), sum(pm10), count(pm10), latitude, longitude), 2, 2,
-  //           2, " "2, sum(pm10_sum), sum(pm10_count)), pm10_avg, pm10_sum_sum
-  //           / " "pm10_count_sum), <pm10_avg:double, latitude:int64,
-  //           longitude: " "int64>[i=0:*:0:100000000]), pm10_avg desc), 1)",
-  //       hotspotSchema);
-  //   auto hotspotCells = hotspot->readcell();
-  //   auto current = ST_ClosestObject_RoadNode(mapCollection, neo4j, lat,
-  //                                            lon);  // Current coord
-  //   int target = -1;
-  //   while (hotspotCells.size() != 0) {
-  //     auto targetLat = 34.011898718557454 +
-  //                      (double)get<long long>(hotspotCells.at(2)) *
-  //                      0.000172998;
-  //     auto targetLon = -118.34501002237936 +
-  //                      (double)get<long long>(hotspotCells.at(3)) *
-  //                      0.000216636;
-  //     // cout << targetLat << targetLon << (double)
-  //     // get<double>(hotspotCells.at(1)) << endl;
+  // custom window aggregator
+  // there is no way to "sum(sum) / sum(count)" in the current implementation of
+  //   PreVision, so we use WindowCustom to calculate the average value.
+  // The array output is double type, so the sum of average is store in the
+  //   output cells and the count value is accumulated in the vector outside.
+  uint64_t lowestDimSize = 1;
+  unordered_map<uint64_t, std::vector<int>> count;
+  auto A = WindowCustom(
+      A2, {5, 5}, std::vector<tilestore_datatype_t>{TILESTORE_FLOAT64},
+      [&count](Chunk &out) {},  // Nothing to do
+      [&count, lowestDimSize](Chunk &in, uint64_t inIdx, Chunk &out,
+                              uint64_t outIdx) {
+        // accumulate cell value to the output buffer
+        uint8_t *inBuf = (uint8_t *)bf_util_get_pagebuf(in.curpage);
+        size_t inDataLen = in.curpage->pagebuf_len / in.curpage->max_idx;
+        double *outBuf = (double *)bf_util_get_pagebuf(out.curpage);
 
-  //     target =
-  //         ST_ClosestObject_RoadNode(mapCollection, neo4j, targetLat,
-  //         targetLon);
-  //     break;
-  //   }
+        // get count vector
+        uint64_t _1dc = in.tile_coords[0] * lowestDimSize + in.tile_coords[1];
+        if (count.find(_1dc) == count.end()) {
+          count[_1dc] = std::vector<int>(in.curpage->max_idx, 0);
+        }
 
-  //   std::string neoq =
-  //       "MATCH (source:Roadnode {roadnode_id: " + to_string(current) +
-  //       "}), (target:Roadnode {roadnode_id: " + to_string(target) +
-  //       "}) \
-//         CALL gds.shortestPath.dijkstra.stream('road_network', { \
-//             sourceNode: source, \
-//             targetNode: target, \
-//             relationshipWeightProperty: 'distance' \
-//         }) \
-//         YIELD index, sourceNode, targetNode, totalCost, nodeIds, costs,
-  //         path \
-//         RETURN \
-//             index, \
-//             sourceNode, \
-//             targetNode, \
-//             totalCost, \
-//             costs, \
-//             nodes(path) as path \
-//         LIMIT 1";
+        // the first 4 bytes are the average value and the next 4 bytes are the
+        // count value
+        outBuf[outIdx] += *(float *)(inBuf + inDataLen * inIdx);
+        count[_1dc][outIdx] +=
+            *(int *)(inBuf + inDataLen * inIdx + sizeof(float));
+      },
+      [&count, lowestDimSize](Chunk &out) {
+        // calculate the average value
+        double *outBuf = (double *)bf_util_get_pagebuf(out.curpage);
+        uint64_t _1dc = out.tile_coords[0] * lowestDimSize + out.tile_coords[1];
+        for (uint64_t outIdx = 0; outIdx < out.curpage->max_idx; outIdx++) {
+          if (bf_util_is_cell_null(out.curpage, outIdx)) {
+            continue;
+          }
 
-  //   // std::cout << neoq << std::endl;
+          outBuf[outIdx] /= count[_1dc][outIdx];
+        }
+      });
 
-  //   auto neor = neo4j_run(neo4j->conn, neoq.c_str(), neo4j_null);
-  //   auto neof = neo4j_fetch_next(neor);
-  //   if (neof == NULL)
-  //     std::cout << "No result!!!" << std::endl;
-  //   else {
-  //     auto nSource = neo4j_int_value(neo4j_result_field(neof, 1));
-  //     auto nTarget = neo4j_int_value(neo4j_result_field(neof, 2));
-  //     auto nTotalCost = neo4j_float_value(neo4j_result_field(neof, 3));
-  //     char buf[65536];
-  //     std::string nPath =
-  //         neo4j_tostring(neo4j_result_field(neof, 5), buf, sizeof(buf));
+  auto B1 = Topk(A, prevision::TopkType::MAX, 1);
+  pvEngine->Execute(*B1);
 
-  //     // cout << to_string(nSource) << ", " << to_string(nTarget) << ", " <<
-  //     // to_string(nTotalCost) << ", " << nPath << endl;
-  //     nrows++;
-  //   }
+  PFpage *page = t15GetBuffer(B1->getArrayName());
 
-  //   cout << "[TASK15]: TOTAL " << nrows << " ROWS ARE REPORTED" << endl;
+  uint64_t *latBuf = bf_util_pagebuf_get_coords(page, 0);
+  uint64_t *lonBuf = bf_util_pagebuf_get_coords(page, 1);
+  double *buf = (double *)bf_util_get_pagebuf(page);
+
+  dconn
+      .Query(
+          "CREATE TEMP TABLE B1 AS "
+          "SELECT doc_make('{\"longitude\": " +
+          to_string(lonBuf[0]) +
+          ", "
+          "\"latitude\": " +
+          to_string(latBuf[0]) +
+          ", "
+          "\"pm10_avg\": " +
+          to_string(buf[0]) + "}') AS data")
+      ->Print();
+
+  auto startStr =
+      "doc_st_closest_object_composite_string('Site_"
+      "centroid', 'properties.type', [" +
+      to_string(lon) + ", " + to_string(lat) + "], 'roadnode')";
+  auto endStr =
+      "doc_st_closest_object_composite_string('Site_centroid', '"
+      "properties.type', "
+      "[(doc_get_int32('longitude', "
+      "B1.data) * 0.000216636 - 118.34501002237936)::DOUBLE, "
+      "(doc_get_int32('latitude', B1.data) * 0.000172998 + "
+      "34.011898718557454)::DOUBLE], 'roadnode')";
+
+  dconn
+      .Query("SELECT doc_make('{\"start\": ' || " + startStr +
+             " || ', "
+             "\"end\": ' || " +
+             endStr +
+             " || '}') AS data "
+             "FROM B1")
+      ->Print();
+  // for validation
+  // dconn
+  //     .Query("SELECT doc_make_json(doc_make('{\"start\": ' || " + startStr +
+  //            " || ', "
+  //            "\"end\": ' || " +
+  //            endStr +
+  //            " || '}')) AS data "
+  //            "FROM B1")
+  //     ->Print();
+
+  t15UnpinBuffer(B1->getArrayName());
+
+  cout << "[TASK15]: END" << endl;
 }
 
 /**
