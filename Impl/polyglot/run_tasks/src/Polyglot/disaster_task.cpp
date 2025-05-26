@@ -1,5 +1,6 @@
 #include "Connection/Connection.h"
 #include "Polyglot/func.h"
+#include "velocypack/vpack.h"
 
 // prevision
 #include "interface/functions.h"
@@ -7,6 +8,7 @@
 
 using namespace std;
 using namespace duckdb;
+using namespace arangodb::velocypack;
 
 PFpage *t14GetBuffer(string arrName) {
   // assume that there is only one tile
@@ -322,104 +324,133 @@ void T15(int Z1, int Z2, double lon, double lat) {
  *
  */
 void T16(long timestamp) {
-  //   auto mongodb = mongodb_connector("Disaster");
-  //   auto map = mongodb.db["Site"];
+  const int SF = 1;
+  int Z1 = 3 * SF;
+  int Z2 = 4 * SF;
 
-  //   int arrayinfo_time_offset = 1600182000;
-  //   int arrayinfo_time_grid_interval = 10800;
+  PolyglotConnection conn(true, "disaster", true);
+  auto &dconn = conn.GetDuckdbConnection();
+  auto pvEngine = conn.GetPrevisionEngine();
 
-  //   double arrayinfo_lat_offset = 34.01189870;
-  //   double arrayinfo_lat_grid_interval = 0.000172998;
+  auto finedust = prevision::OpenArray("finedust");
+  auto pm10 = prevision::Project(finedust, {0});
 
-  //   double arrayinfo_lon_offset = -118.3450100223;
-  //   double arrayinfo_lon_grid_interval = 0.000216636;
+  /* A */
+  // filter: timestamp >= Z1 AND timestamp <= Z2
+  std::vector<uint32_t> _begin = {(uint32_t)Z1, 0, 0},
+                        _end = {(uint32_t)Z2 + 1, 523, 523},
+                        _tilesize = {(uint32_t)Z2 + 1 - Z1, 523, 523};
+  auto ta1 = prevision::Subarray(pm10, {_begin, _end}, _tilesize);
+  // AVG(pm10) AND GROUP BY latitude, longitude
+  auto A = prevision::Avg(ta1, {1, 2});
+  pvEngine->Execute(*A);
 
-  //   double lat_max = arrayinfo_lat_grid_interval * 522 +
-  //   arrayinfo_lat_offset; double lon_max = arrayinfo_lon_grid_interval * 522
-  //   + arrayinfo_lon_offset;
+  /* B */
+  string nested =
+      "SELECT doc_make('{\"site_id\": ' || "
+      "doc_get_int32('site_id', data) || ', \"coordinates\": ' || "
+      "doc_make_json(doc_get_array('geometry.coordinates', data)) || "
+      "'}') AS data "
+      "FROM Site "
+      "WHERE doc_get_string('properties.type', data) = 'building' "
+      "AND "
+      "doc_get_string('properties.description', data) = "
+      "'school'";
+  // dconn.Query("SELECT doc_make_json(data) FROM (" + nested + ")")->Print();
 
-  //   int normZ1 =
-  //       (timestamp - arrayinfo_time_offset) / arrayinfo_time_grid_interval;
-  //   int normZ2 =
-  //       (timestamp - arrayinfo_time_offset + arrayinfo_time_grid_interval -
-  //       1) / arrayinfo_time_grid_interval;
+  // manual unnesting three times
+  string unnested =
+      "SELECT doc_insert(data, unnest(doc_get_list('coordinates', "
+      "data, 1)::VPack[])::VPack, 'coordinates')::VPack AS data FROM "
+      "(" +
+      nested + ") ";
+  unnested =
+      "SELECT doc_insert(data, unnest(doc_get_list('coordinates', "
+      "data, 1)::VPack[])::VPack, 'coordinates')::VPack AS data FROM "
+      "(" +
+      unnested + ") ";
+  unnested =
+      "SELECT doc_insert(data, unnest(doc_get_list('coordinates', "
+      "data, 1)::VPack[])::VPack, 'coordinates')::VPack AS data FROM "
+      "(" +
+      unnested + ") ";
 
-  //   cout << "Z1:" << normZ1 << ", Z2:" << normZ2 << endl;
+  // dconn.Query("SELECT doc_make_json(data) FROM (" + unnested + ")")->Print();
 
-  //   unique_ptr<ScidbConnection> conn(
-  //       new ScidbConnection(SCIDB_HOST_DISASTER + string(":8080")));
+  string refined =
+      "SELECT doc_make('{\"site_id\": ' || "
+      "doc_get_int32('site_id', data) || "
+      "', \"longitude\": ' || "
+      "FLOOR((((SUM(doc_get_list_double('coordinates', "
+      "data)[1]::FLOAT) / "
+      "COUNT(*)) + 118.3450100223) / 0.000216636))::INTEGER || "
+      "', \"latitude\": ' || "
+      "FLOOR((((SUM(doc_get_list_double('coordinates', "
+      "data)[2]::FLOAT) / COUNT(*)) - 34.01189870) / "
+      "0.000172998))::INTEGER || "
+      "'}') AS data "
+      "FROM (" +
+      unnested +
+      ") "
+      "GROUP BY doc_get_int32('site_id', data)";
+  string final = "SELECT * FROM (" + refined +
+                 ") "
+                 "WHERE 0 <= doc_get_int32('longitude', data) AND "
+                 "doc_get_int32('longitude', data) <= 522 AND "
+                 "0 <= doc_get_int32('latitude', data) AND "
+                 "doc_get_int32('latitude', data) <= 522";
 
-  //   //  aggregate(between(finedust, 0,null, null,1,null,null), avg(pm10),
-  //   //  latitude, longitude)
-  //   conn->exec("remove(finedust_temp)");
-  //   conn->exec("store(aggregate(between(Finedust," + to_string(normZ1) +
-  //              ",null, null," + to_string(normZ2) +
-  //              ",null,null), avg(pm10), latitude,
-  //              longitude),finedust_temp)");
+  // FIXME: rename the function
+  PFpage *page = t15GetBuffer(A->getArrayName());
 
-  //   mongocxx::pipeline p{};
-  //   p.match(make_document(kvp("properties.type", "building")));
-  //   p.match(make_document(kvp("properties.description", "school")));
-  //   p.project(make_document(kvp("building_id", "$_id"),
-  //                           kvp("coordinates", "$geometry.coordinates"),
-  //                           kvp("_id", 0)));
+  dconn.Query("CREATE TEMP TABLE RES (data VPACK)");
+  Appender resAppender(dconn, "RES");
 
-  //   mongocxx::options::aggregate options;
-  //   options.allow_disk_use(true);
+  int cnt = 0;
+  auto res = dconn.Query(final);
+  auto resChunk = res->Fetch();
+  while (resChunk) {
+    double *buf = (double *)bf_util_get_pagebuf(page);
+    for (int i = 0; i < resChunk->size(); ++i) {
+      int site_id, latitude, longitude;
+      auto val = resChunk->GetValue(0, i).GetValueUnsafe<std::string>();
+      auto raw = val.c_str();
+      Slice s((const uint8_t *)raw);
 
-  //   int nrow = 0;
-  //   ScidbSchema schema;
-  //   schema.dims.push_back(ScidbDim("latitude", 0, INT32_MAX, 0, 1000000));
-  //   schema.dims.push_back(ScidbDim("longitude", 0, INT32_MAX, 0, 1000000));
-  //   schema.attrs.push_back(ScidbAttr("pm10", FLOAT));
-  //   auto cursor = map.aggregate(p, options);
+      site_id = s.get("site_id").getInt();
+      longitude = s.get("longitude").getInt();
+      latitude = s.get("latitude").getInt();
 
-  //   int nschool = 0;
-  //   for (auto school : cursor) {
-  //     nschool++;
-  //     auto json = Json::parse(bsoncxx::to_json(school));
-  //     auto centroid = STcentroid(json["coordinates"]);
-  //     auto school_lat = get<1>(centroid);
-  //     auto school_lon = get<0>(centroid);
+      uint64_t idx = latitude * 523 + longitude;
+      if (bf_util_is_cell_null(page, idx)) continue;
 
-  //     if (school_lon <= lon_max && school_lon >= arrayinfo_lon_offset &&
-  //         school_lat <= lat_max && school_lat >= arrayinfo_lat_offset) {
-  //       auto cell1 = high_resolution_clock::now();
-  //       int school_lon_norm =
-  //           (school_lon - arrayinfo_lon_offset) /
-  //           arrayinfo_lon_grid_interval;
-  //       int school_lat_norm =
-  //           (school_lat - arrayinfo_lat_offset) /
-  //           arrayinfo_lat_grid_interval;
+      Builder b2;
+      b2.add(arangodb::velocypack::Value(ValueType::Object));
+      b2.add("site_id", arangodb::velocypack::Value(site_id));
+      b2.add("latitude", arangodb::velocypack::Value(latitude));
+      b2.add("longitude", arangodb::velocypack::Value(longitude));
+      b2.add("pm10_avg", arangodb::velocypack::Value(buf[idx]));
+      b2.close();
 
-  //       string query = "between(finedust_temp," + to_string(school_lat_norm)
-  //       +
-  //                      "," + to_string(school_lon_norm) + "," +
-  //                      to_string(school_lat_norm) + "," +
-  //                      to_string(school_lon_norm) + ")";
+      auto data = HexDump(b2.slice());
+      auto value =
+          duckdb::Value::BLOB((const_data_ptr_t)data.data, data.length);
 
-  //       auto download = conn->download(query, schema);
-  //       auto cell = download->readcell();
-  //       while (cell.size() != 0) {
-  //         double lat = get<int>(cell.at(0));
-  //         double lon = get<int>(cell.at(1));
-  //         float pm10 = get<float>(cell.at(2));
-  //         double cell_lat =
-  //             lat * arrayinfo_lat_grid_interval + arrayinfo_lat_offset;
-  //         double cell_lon =
-  //             lon * arrayinfo_lon_grid_interval + arrayinfo_lon_offset;
+      resAppender.BeginRow();
+      resAppender.Append(value);
+      resAppender.EndRow();
 
-  //         nrow++;
-  //         //                cout << query << endl;
-  //         cell = download->readcell();
-  //       }
-  //       auto cell2 = high_resolution_clock::now();
+      cout << "site_id=" << site_id << ", latitude=" << latitude
+           << ", longitude=" << longitude << ", val=" << buf[idx] << endl;
+      ++cnt;
+    }
 
-  //       //            cout << duration_cast<microseconds>(cell2 -
-  //       cell1).count()
-  //       //            << endl;
-  //     }
-  //   }
+    resAppender.Flush();
+    resChunk = res->Fetch();
+  }
 
-  //   cout << "[TASK16]: TOTAL " << nrow << " ROWS ARE REPORTED" << endl;
+  t15UnpinBuffer(A->getArrayName());
+  cout << cnt;
+
+  cout << "[TASK16]: DONE" << endl;
 }
