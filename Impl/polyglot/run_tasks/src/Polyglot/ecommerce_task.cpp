@@ -216,12 +216,18 @@ void T2() {
   //     "CREATE INDEX Rating_history_idx2 on "
   //     "Rating_history(product_id)");
 
+  // dconn.Query(
+  //     "CREATE TEMPORARY TABLE Rcustomer as "
+  //     "(SELECT t.customer_id, (ROW_NUMBER() OVER () - 1)::INTEGER as "
+  //     "customer_id_d from "
+  //     "(Select distinct(customer_id) as customer_id "
+  //     "from Rating_history order by customer_id) as t )");
   dconn.Query(
       "CREATE TEMPORARY TABLE Rcustomer as "
       "(SELECT t.customer_id, (ROW_NUMBER() OVER () - 1)::INTEGER as "
       "customer_id_d from "
       "(Select distinct(customer_id) as customer_id "
-      "from Rating_history order by customer_id) as t )");
+      "from Rating_history) as t )");
 
   dconn.Query(
       "CREATE TEMPORARY TABLE Rproduct as "
