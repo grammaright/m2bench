@@ -4,9 +4,9 @@ set(CMAKE_C_COMPILER gcc-10)
 set(CMAKE_CXX_COMPILER g++-10)
 set(CMAKE_CXX_STANDARD 20)
 
-project(m2bench)
-
 set(CMAKE_BUILD_TYPE Debug)
+
+project(m2bench)
 
 include_directories("src/include")
 
@@ -27,13 +27,8 @@ include_directories(${BLAS_INCLUDE_DIRS})
 
 include(FetchContent)
 
-# m2bench
-include_directories(include)
-include_directories(src)
-
 # VelocyDuck
 include_directories("thirdparty/velocypack/include")
-include_directories("thirdparty/RTree")
 include_directories("thirdparty/libspatialindex/include")
 
 include_directories("$ENV{PREVISION_PATH}/src/include")
@@ -49,6 +44,7 @@ add_executable(m2bench
 
     src/Polyglot/ecommerce_func.cpp
     src/Polyglot/ecommerce_task.cpp
+    src/Polyglot/healthcare_func.cpp
     src/Polyglot/healthcare_task.cpp
     src/Polyglot/disaster_task.cpp
 
