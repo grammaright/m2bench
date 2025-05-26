@@ -807,8 +807,9 @@ void docStClosestObjectIdVectorized(DataChunk& args, ExpressionState& state,
     double* query = new double[2];
     for (size_t j = inputListData[i].offset;
          j < inputListData[i].offset + inputListData[i].length; j++) {
+      int idx = j - inputListData[i].offset;
       auto val = inputChildVector.GetValue(j).GetValue<double>();
-      query[j] = val;
+      query[idx] = val;
     }
 
     // find the nearest object in the spatial index

@@ -1,25 +1,90 @@
-#include <math.h>
-#include <time.h>
+#include "Connection/Connection.h"
+#include "Polyglot/func.h"
 
-#include <boost/geometry.hpp>
-#include <chrono>
+// prevision
+#include "interface/functions.h"
+#include "type/type.h"
 
-using std::chrono::high_resolution_clock;
+using namespace std;
+using namespace duckdb;
 
-#define BUFFER 1000
+PFpage *t14GetBuffer(string arrName) {
+  // assume that there is only one tile
+  uint64_t dcoords[] = {0, 0, 0};
 
-double distance(double lat, double lon, double lat2, double lon2) {
-  return sqrt((lat - lat2) * (lat - lat2) + (lon - lon2) * (lon - lon2));
+  PFpage *page;
+  array_key key;
+  key.arrayname = new char[arrName.size()];
+  memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
+  key.dcoords = dcoords;
+  key.dim_len = 3;
+  key.emptytile_template = BF_EMPTYTILE_NONE;
+
+  BF_GetBuf(key, &page);
+
+  // delete key.arrayname;
+
+  return page;
 }
 
-const double pi = acos(-1);
-double deg2rad(double deg) { return deg / 180 * pi; }
+void t14UnpinBuffer(string arrName) {
+  uint64_t dcoords[] = {0, 0, 0};
 
-double distance_haversine(double lat1, double lon1, double lat2, double lon2) {
-  return 2 * 6378 *
-         asin(sqrt(pow(sin(deg2rad((lat2 - lat1) / 2)), 2) +
-                   cos(deg2rad(lat1)) * cos(deg2rad(lat2)) *
-                       pow(sin(deg2rad((lon2 - lon1) / 2)), 2)));
+  array_key key;
+  key.arrayname = new char[arrName.size()];
+  memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
+  key.dcoords = dcoords;
+  key.dim_len = 3;
+  key.emptytile_template = BF_EMPTYTILE_NONE;
+  BF_UnpinBuf(key);
+
+  // delete key.arrayname;
+}
+
+void ChunkProcessing(PolyglotConnection &conn,
+                     std::shared_ptr<prevision::ArrayQuery> in, int start,
+                     int end, int farStart) {
+  auto &dconn = conn.GetDuckdbConnection();
+  auto pvEngine = conn.GetPrevisionEngine();
+
+  std::vector<uint32_t> _begin = {(uint32_t)start, 0, 0},
+                        _end = {(uint32_t)end + 1, 523, 523},
+                        _tilesize = {(uint32_t)end + 1 - start, 523, 523};
+
+  auto B = prevision::Subarray(in, {_begin, _end}, _tilesize);
+  auto C = prevision::Topk(B, prevision::TopkType::MAX, 1);
+  pvEngine->Execute(*C);
+
+  // get buffer
+  PFpage *page = t14GetBuffer(C->getArrayName());
+
+  // insert data to D1
+  uint64_t *ts = bf_util_pagebuf_get_coords(page, 0);
+  uint64_t *lat = bf_util_pagebuf_get_coords(page, 1);
+  uint64_t *lon = bf_util_pagebuf_get_coords(page, 2);
+  double *buf = (double *)bf_util_get_pagebuf(page);
+
+  dconn
+      .Query(
+          "INSERT INTO D1 VALUES( "
+          "doc_make('{\"longitude\": " +
+          to_string(lon[0]) +
+          ", "
+          "\"latitude\": " +
+          to_string(lat[0]) +
+          ", "
+          "\"date\": " +
+          to_string(((int)ts[0] + farStart + start) / 8) +
+          ", "
+          "\"timestamp\": " +
+          to_string(ts[0] + farStart + start) +
+          ", "
+          "\"pm10_avg\": " +
+          to_string(buf[0]) + "}'))")
+      ->Print();
+
+  // unpin buffer
+  t14UnpinBuffer(C->getArrayName());
 }
 
 /*
@@ -31,80 +96,56 @@ double distance_haversine(double lat1, double lon1, double lat2, double lon2) {
  *
  */
 void T14(int z1, int z2) {
-  //   unique_ptr<ScidbConnection> scidb(
-  //       new ScidbConnection(SCIDB_HOST_DISASTER + string(":8080")));
-  //   unique_ptr<mongodb_connector> mongodb(new mongodb_connector("Disaster"));
-  //   auto mdb = mongodb->db;
-  //   auto mapCentroidCollection = mdb["Site_centroid"];
+  const int SF = 1;
+  const int Z1 = 5 * SF;
+  const int Z2 = 10 * SF;
 
-  //   size_t nrows = 0;
+  PolyglotConnection conn(true, "disaster", true);
+  auto &dconn = conn.GetDuckdbConnection();
 
-  //   // Query A and B
-  //   // 8 is magic number for dataset
-  //   scidb->exec("store(redimension(apply(window(between(Finedust, " +
-  //               to_string(z1) + ", 0, 0, " + to_string(z2) +
-  //               ", 522, 522), 0, 0, 2, 2, 2, 2, avg(pm10)), date,
-  //               timestamp/8), "
-  //               "<pm10_avg: double>[date=0:*:0:?; timestamp=0:*:0:?; "
-  //               "latitude=0:*:0:?; longitude=0:*:0:?]), t14t1)");
+  auto finedust = prevision::OpenArray("finedust");
+  auto pm10 = prevision::Project(finedust, {0});
 
-  //   // Query C
-  //   ScidbSchema t2Schema;
-  //   t2Schema.dims.push_back(ScidbDim("$n", 0, INT32_MAX, 0, 1000000));
-  //   t2Schema.attrs.push_back(ScidbAttr("pm10_avg_max", DOUBLE));
-  //   t2Schema.attrs.push_back(ScidbAttr("date", INT64));
+  std::vector<uint32_t> _begin = {(uint32_t)5 * SF, 0, 0},
+                        _end = {(uint32_t)10 * SF + 1, 523, 523},
+                        _tilesize = {(uint32_t)10 * SF + 1 - (5 * SF), 523,
+                                     523};
+  auto A1 = prevision::Subarray(pm10, {_begin, _end}, _tilesize);
+  auto A = prevision::WindowAvg(A1, {1, 5, 5});
 
-  //   ScidbSchema maxSchema;
-  //   maxSchema.dims.push_back(ScidbDim("i", 0, INT32_MAX, 0, 1000000));
-  //   maxSchema.attrs.push_back(ScidbAttr("pm10_avg", DOUBLE));
-  //   maxSchema.attrs.push_back(ScidbAttr("latitude", INT64));
-  //   maxSchema.attrs.push_back(ScidbAttr("longitude", INT64));
-  //   maxSchema.attrs.push_back(ScidbAttr("timestamp", INT64));
+  // date processing
+  auto start = 5 * SF;
+  auto len = 10 * SF - start;
+  int a = 1;
+  while (a * 8 < start) {
+    a++;
+  }
 
-  //   auto t2arr = scidb->download(
-  //       "sort(redimension(aggregate(t14t1, max(pm10_avg), date),
-  //       <pm10_avg_max: " "double, date: int64>[i=0:*:0:1000]), date)",
-  //       t2Schema);
-  //   auto t2arrVal = t2arr->readcell();
-  //   while (t2arrVal.size() != 0) {
-  //     // cout << get<double>(t2arrVal.at(1)) << " " << get<long
-  //     // long>(t2arrVal.at(2)) << endl;
-  //     long long date = get<long long>(t2arrVal.at(2));
-  //     double maxVal = get<double>(t2arrVal.at(1));
+  dconn.Query("CREATE TEMP TABLE D1 (data VPACK)");
 
-  //     // get location of value
-  //     // If you have a better solution, please improve it.
-  //     // Another way to do this is that replace the query for t2arr to
-  //     cross_join
-  //     // (t14t1 and max aggregated one), but it is slow a little bit.
-  //     auto maxArr = scidb->download(
-  //         "sort(redimension(filter(t14t1, abs(pm10_avg - " +
-  //         to_string(maxVal) +
-  //             ") < 1 and timestamp / 8 = " + to_string(date) +
-  //             "), <pm10_avg:double, latitude:int64, longitude: int64,
-  //             timestamp: " "int64>[i=0:*:0:1000]), pm10_avg)",
-  //         maxSchema);
-  //     auto maxArrVal = maxArr->readcell();
-  //     if (maxArrVal.size() == 0)
-  //       throw std::runtime_error("equality check for floating point is
-  //       failed!");
+  int curr = (a * 8) % start;
+  ChunkProcessing(conn, A, 0, curr - 1, start);
+  while (curr + 8 <= len) {
+    ChunkProcessing(conn, A, curr, curr + 7, start);
+    curr += 8;
+  }
+  ChunkProcessing(conn, A, curr, len, start);
 
-  //     auto closestValue = ST_ClosestObject_Map_building_centroid(
-  //         mapCentroidCollection,
-  //         34.011898718557454 +
-  //             (double)get<long long>(maxArrVal.at(2)) * 0.000172998,
-  //         -118.34501002237936 +
-  //             (double)get<long long>(maxArrVal.at(3)) * 0.000216636);
-  //     // cout << date << " " << get<long long>(maxArrVal.at(4)) << " " <<
-  //     // to_string(closestValue) << " " << endl;
+  dconn
+      .Query(
+          "SELECT doc_make('{\"date\": ' || doc_get_int32('date', data) || ',
+          "
+          "\"timestamp\": ' || doc_get_int32('timestamp', data) || ', "
+          "\"site_id\": ' || "
+          "doc_st_closest_object_id('Site_centroid', "
+          "[(doc_get_int32('longitude', data)::DOUBLE * 0.000216636 - "
+          "118.34501002237936), (doc_get_int32('latitude', data)::DOUBLE * "
+          "0.000172998 + 34.011898718557454)]) || '}') AS data "
+          "FROM D1 "
+          "ORDER BY doc_get_int32('date', data)")
+      ->Print();
 
-  //     t2arrVal = t2arr->readcell();
-  //     nrows++;
-  //   }
-
-  //   scidb->exec("remove(t14t1)");
-
-  //   cout << "[TASK14]: TOTAL " << nrows << " ROWS ARE REPORTED" << endl;
+  cout << "[TASK14]: END" << endl;
 }
 
 /*
