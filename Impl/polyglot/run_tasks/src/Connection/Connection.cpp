@@ -89,6 +89,11 @@ PolyglotConnection::PolyglotConnection(bool withPvBfInit, string dbpath,
       {LogicalType::VARCHAR, LogicalType::VARCHAR,
        LogicalType::LIST(LogicalType::DOUBLE), LogicalType::VARCHAR},
       LogicalType::VARCHAR, docStClosestObjectCompositeStrVectorized);
+  duckdbConnection->CreateVectorizedFunction(
+      "doc_st_closest_object_id_composite_string",
+      {LogicalType::VARCHAR, LogicalType::VARCHAR,
+       LogicalType::LIST(LogicalType::DOUBLE), LogicalType::VARCHAR},
+      LogicalType::UINTEGER, docStClosestObjectIdCompositeStrVectorized);
 
   // load spatial extension
   duckdbConnection->Query("LOAD 'spatial'");

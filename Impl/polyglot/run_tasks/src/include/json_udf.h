@@ -57,7 +57,9 @@ void docMakeJSONVectorized(DataChunk& args, ExpressionState& state,
 //  return ID
 void docStClosestObjectIdVectorized(DataChunk& args, ExpressionState& state,
                                     Vector& result);
-// return JSON string object
+void docStClosestObjectIdCompositeStrVectorized(DataChunk& args,
+                                                ExpressionState& state,
+                                                Vector& result);
 void docStClosestObjectVectorized(DataChunk& args, ExpressionState& state,
                                   Vector& result);
 // return JSON string object

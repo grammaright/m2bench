@@ -717,11 +717,12 @@ void docStClosestObjectVectorized(DataChunk& args, ExpressionState& state,
   auto conn = PolyglotConnection::CreateDuckdbConnection();
   for (size_t i = 0; i < args.size(); i++) {
     // get query point
-    double* query = new double[2];
+    double query[2];
     for (size_t j = inputListData[i].offset;
          j < inputListData[i].offset + inputListData[i].length; j++) {
+      int idx = j - inputListData[i].offset;
       auto val = inputChildVector.GetValue(j).GetValue<double>();
-      query[j] = val;
+      query[idx] = val;
     }
 
     // find the nearest object in the spatial index
@@ -804,7 +805,7 @@ void docStClosestObjectIdVectorized(DataChunk& args, ExpressionState& state,
   auto conn = PolyglotConnection::CreateDuckdbConnection();
   for (size_t i = 0; i < args.size(); i++) {
     // get query point
-    double* query = new double[2];
+    double query[2];
     for (size_t j = inputListData[i].offset;
          j < inputListData[i].offset + inputListData[i].length; j++) {
       int idx = j - inputListData[i].offset;
@@ -841,6 +842,74 @@ void docStClosestObjectIdVectorized(DataChunk& args, ExpressionState& state,
 uint64_t idxOpenTime2 = 0;
 uint64_t idxGetTime2 = 0;
 uint64_t idxQueryTime2 = 0;
+
+void docStClosestObjectIdCompositeStrVectorized(DataChunk& args,
+                                                ExpressionState& state,
+                                                Vector& result) {
+  // get collection name, field name, and (equi) condition; they are expected
+  // to a string literal (constant)
+  auto& colNameVec = args.data[0];
+  auto colName = colNameVec.GetValue(0).GetValue<std::string>();
+  auto& fieldNameVec = args.data[1];
+  auto fieldName = fieldNameVec.GetValue(0).GetValue<std::string>();
+  auto eqcondVec = args.data[3];
+  auto eqcond = eqcondVec.GetValue(0).GetValue<std::string>();
+
+  // get the index for this exists
+  auto start = std::chrono::high_resolution_clock::now();
+  string name = colName + "_" + fieldName + ".sidx" + "/" + eqcond;
+  IStorageManager* diskfile = StorageManager::loadDiskStorageManager(name);
+  StorageManager::IBuffer* file =
+      StorageManager::createNewRandomEvictionsBuffer(*diskfile, INT32_MAX,
+                                                     false);
+  ISpatialIndex* tree = RTree::loadRTree(*file, 1);
+  auto end = std::chrono::high_resolution_clock::now();
+  idxOpenTime2 +=
+      std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+
+  // get input and output
+  auto& inputVec = args.data[2];
+  auto& inputChildVector = ListVector::GetEntry(inputVec);
+  auto inputListData = ListVector::GetData(inputVec);
+
+  auto result_data = FlatVector::GetData<unsigned int>(result);
+
+  // iterate through input
+  auto conn = PolyglotConnection::CreateDuckdbConnection();
+  for (size_t i = 0; i < args.size(); i++) {
+    // get query point
+    double query[2];
+    for (size_t j = inputListData[i].offset;
+         j < inputListData[i].offset + inputListData[i].length; j++) {
+      int idx = j - inputListData[i].offset;
+      auto val = inputChildVector.GetValue(j).GetValue<double>();
+      query[idx] = val;
+    }
+
+    // find the nearest object in the spatial index
+    // TODO: assume that -1 indicates not found
+    start = std::chrono::high_resolution_clock::now();
+    RtreeTopOneVisitor vis;
+    SpherePoint p = SpherePoint(query, 2);
+    tree->nearestNeighborQuery(1, p, vis);
+
+    end = std::chrono::high_resolution_clock::now();
+    idxGetTime2 +=
+        std::chrono::duration_cast<std::chrono::nanoseconds>(end - start)
+            .count();
+
+    if (vis.result == -1) {
+      FlatVector::SetNull(result, i, true);
+      continue;
+    }
+
+    result_data[i] = (unsigned int)vis.result;
+  }
+
+  std::cerr << "idxOpenTime2: " << idxOpenTime2 << std::endl;
+  std::cerr << "idxGetTime2: " << idxGetTime2 << std::endl;
+  std::cerr << "idxQueryTime2: " << idxQueryTime2 << std::endl;
+}
 
 void docStClosestObjectCompositeStrVectorized(DataChunk& args,
                                               ExpressionState& state,
@@ -880,8 +949,9 @@ void docStClosestObjectCompositeStrVectorized(DataChunk& args,
     double query[2];
     for (size_t j = inputListData[i].offset;
          j < inputListData[i].offset + inputListData[i].length; j++) {
+      int idx = j - inputListData[i].offset;
       auto val = inputChildVector.GetValue(j).GetValue<double>();
-      query[j] = val;
+      query[idx] = val;
     }
 
     // find the nearest object in the spatial index
