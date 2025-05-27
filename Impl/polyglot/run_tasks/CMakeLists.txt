@@ -10,12 +10,6 @@ project(m2bench)
 
 include_directories("src/include")
 
-# Boost
-find_package (Boost 1.70.0 REQUIRED COMPONENTS unit_test_framework)
-include_directories(${Boost_INCLUDE_DIR})
-find_library(Boost_LIBRARIES boost ${Boost_LIBRARIES_DIR})
-
-
 # Find BLAS
 find_package(BLAS REQUIRED)
 if(!BLAS_FOUND)
@@ -54,7 +48,7 @@ add_executable(m2bench
 )
 
 
-target_link_libraries(m2bench PUBLIC ${Boost_LIBRARIES} 
+target_link_libraries(m2bench PUBLIC 
     "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/velocypack/build/libvelocypack.a"
     "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libspatialindex/build/src/libspatialindex.so"
     duckdb 

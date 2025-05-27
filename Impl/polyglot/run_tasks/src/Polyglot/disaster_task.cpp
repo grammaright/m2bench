@@ -57,9 +57,6 @@ void T14(int SF, bool isValidation) {
       .Query(
           "SELECT '{\"date\": ' || doc_get_int32('date', data) || ', "
           "\"timestamp\": ' || doc_get_int32('timestamp', data) || ', "
-          "\"longitude\": ' || doc_get_int32('longitude', data) || ', "
-          "\"latitude\": ' || doc_get_int32('latitude', data) || ', "
-          "\"pm10_avg\": ' || doc_get_double('pm10_avg', data) || ', "
           "\"site_id\": ' || "
           "doc_st_closest_object_id_composite_string('Site_centroid', "
           "'properties.type', "
