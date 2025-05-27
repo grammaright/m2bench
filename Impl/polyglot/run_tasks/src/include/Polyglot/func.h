@@ -21,3 +21,10 @@ PFpage *t9GetBuffer(string arrName);
 void t9UnpinBuffer(string arrName);
 std::vector<pair<int, double>> t9GetValues(duckdb::Connection &dconn,
                                            PFpage *page, int id);
+PFpage *t14GetBuffer(string arrName);
+void t14UnpinBuffer(string arrName);
+PFpage *t15t16GetBuffer(string arrName);
+void t15t16UnpinBuffer(string arrName);
+void ChunkProcessing(PolyglotConnection &conn,
+                     std::shared_ptr<prevision::ArrayQuery> in, int start,
+                     int end, int farStart);

@@ -9,39 +9,6 @@ using namespace std;
 using namespace duckdb;
 
 /**
-
- Patient
-+---------------+---------+------+-----+---------+-------+
-| Field         | Type    | Null | Key | Default | Extra |
-+---------------+---------+------+-----+---------+-------+
-| patient_id    | int     | NO   | PRI | NULL    |       |
-| gender        | char(1) | YES  |     | NULL    |       |
-| date_of_birth | date    | YES  |     | NULL    |       |
-| date_of_death | date    | YES  |     | NULL    |       |
-+---------------+---------+------+-----+---------+-------+
-
- Prescription
-+------------+-------------+------+-----+---------+-------+
-| Field      | Type        | Null | Key | Default | Extra |
-+------------+-------------+------+-----+---------+-------+
-| patient_id | int         | YES  | MUL | NULL    |       |
-| drug_name  | varchar(20) | YES  |     | NULL    |       |
-| startdate  | date        | YES  |     | NULL    |       |
-| enddate    | date        | YES  |     | NULL    |       |
-| drug_id    | int         | YES  |     | NULL    |       |
-+------------+-------------+------+-----+---------+-------+
-
- Diagnosis
-+-----------------------+------+------+-----+---------+-------+
-| Field                 | Type | Null | Key | Default | Extra |
-+-----------------------+------+------+-----+---------+-------+
-| patient_id            | int  | YES  | MUL | NULL    |       |
-| snomed_id             | int  | YES  |     | NULL    |       |
-| diagnoses_description | text | YES  |     | NULL    |       |
-+-----------------------+------+------+-----+---------+-------+
-**/
-
-/**
  *  [Task9] Drug similarity (R,D=>A)
  *  Find similar drugs for a given patient X's prescribed drug
  *
@@ -56,9 +23,8 @@ using namespace duckdb;
  *
  */
 
-void T9(int patientId) {
-  // const int SF = 1;
-  // const int X = 9 * SF;
+void T9(int SF, bool isValidation) {
+  const int patientId = 9 * SF;
   const int adverseEffectSize = 82853;
   const int drugSize = 14759;
 
@@ -98,29 +64,31 @@ void T9(int patientId) {
     resChunk = res->Fetch();
   }
 
-  // dconn.Query(
-  //     "CREATE TEMPORARY TABLE Rdrug as "
-  //     "(SELECT t.drug, (ROW_NUMBER() OVER () -1)::INTEGER as drug_d from "
-  //     "(Select distinct(drug) as drug "
-  //     "from D2A order by drug) as t )");
-  dconn.Query(
-      "CREATE TEMPORARY TABLE Rdrug as "
-      "(SELECT t.drug, (ROW_NUMBER() OVER () -1)::INTEGER as drug_d from "
-      "(Select distinct(drug) as drug "
-      "from D2A) as t )");
-
-  // dconn.Query(
-  //     "CREATE TEMPORARY TABLE Radverse_effect as "
-  //     "(SELECT t.adverse_effect, (ROW_NUMBER() OVER () - 1)::INTEGER as "
-  //     "adverse_effect_d from "
-  //     "(Select distinct(adverse_effect) as adverse_effect "
-  //     "from D2A order by adverse_effect) as t )");
-  dconn.Query(
-      "CREATE TEMPORARY TABLE Radverse_effect as "
-      "(SELECT t.adverse_effect, (ROW_NUMBER() OVER () - 1)::INTEGER as "
-      "adverse_effect_d from "
-      "(Select distinct(adverse_effect) as adverse_effect "
-      "from D2A) as t )");
+  if (isValidation) {
+    dconn.Query(
+        "CREATE TEMPORARY TABLE Rdrug as "
+        "(SELECT t.drug, (ROW_NUMBER() OVER () -1)::INTEGER as drug_d from "
+        "(Select distinct(drug) as drug "
+        "from D2A order by drug) as t )");
+    dconn.Query(
+        "CREATE TEMPORARY TABLE Radverse_effect as "
+        "(SELECT t.adverse_effect, (ROW_NUMBER() OVER () - 1)::INTEGER as "
+        "adverse_effect_d from "
+        "(Select distinct(adverse_effect) as adverse_effect "
+        "from D2A order by adverse_effect) as t )");
+  } else {
+    dconn.Query(
+        "CREATE TEMPORARY TABLE Rdrug as "
+        "(SELECT t.drug, (ROW_NUMBER() OVER () -1)::INTEGER as drug_d from "
+        "(Select distinct(drug) as drug "
+        "from D2A) as t )");
+    dconn.Query(
+        "CREATE TEMPORARY TABLE Radverse_effect as "
+        "(SELECT t.adverse_effect, (ROW_NUMBER() OVER () - 1)::INTEGER as "
+        "adverse_effect_d from "
+        "(Select distinct(adverse_effect) as adverse_effect "
+        "from D2A) as t )");
+  }
 
   // dconn.Query("CREATE INDEX Rdrug on Rdrug(drug)");
   // dconn.Query(
@@ -140,45 +108,68 @@ void T9(int patientId) {
   auto pvEngine = conn.GetPrevisionEngine();
   pvEngine->Execute(*E);
 
-  auto fRes = dconn.Query(
-      "SELECT DISTINCT Rdrug.drug_d, Rdrug.drug "
-      "FROM Prescription, Rdrug "
-      "WHERE Rdrug.drug = Prescription.drug_id AND Prescription.patient_id = " +
-      to_string(patientId));
-  // auto fRes = dconn.Query(
-  //     "SELECT DISTINCT Rdrug.drug_d, Rdrug.drug "
-  //     "FROM Prescription, Rdrug "
-  //     "WHERE Rdrug.drug = Prescription.drug_id AND Prescription.patient_id =
-  //     " + to_string(patientId) + " ORDER BY Rdrug.drug");
-  auto page = t9GetBuffer(E->getArrayName());
-  auto fResChunk = fRes->Fetch();
-  size_t resCnt = 0;
-  while (fResChunk) {
-    auto drugVec = FlatVector::GetData<int>(fResChunk->data[0]);
-    auto originalDrugIdVec = FlatVector::GetData<int>(fResChunk->data[1]);
-    for (int i = 0; i < fResChunk->size(); ++i) {
-      auto id = drugVec[i];
-      auto oid = originalDrugIdVec[i];
-      auto val = t9GetValues(dconn, page, id);
-      resCnt += val.size();  // not to be eliminated
+  if (isValidation) {
+    auto fRes = dconn.Query(
+        "SELECT DISTINCT Rdrug.drug_d, Rdrug.drug "
+        "FROM Prescription, Rdrug "
+        "WHERE Rdrug.drug = Prescription.drug_id AND Prescription.patient_id "
+        "= " +
+        to_string(patientId) + " ORDER BY Rdrug.drug");
+    auto page = t9GetBuffer(E->getArrayName());
+    auto fResChunk = fRes->Fetch();
+    size_t resCnt = 0;
+    while (fResChunk) {
+      auto drugVec = FlatVector::GetData<int>(fResChunk->data[0]);
+      auto originalDrugIdVec = FlatVector::GetData<int>(fResChunk->data[1]);
+      for (int i = 0; i < fResChunk->size(); ++i) {
+        auto id = drugVec[i];
+        auto oid = originalDrugIdVec[i];
+        auto val = t9GetValues(dconn, page, id);
+        resCnt += val.size();  // not to be eliminated
 
-      // For validation
-      // for (auto &item : val) {
-      //   auto a = dconn.Query("SELECT drug FROM Rdrug WHERE drug_d = " +
-      //                        to_string(item.first));
-      //   auto ar = a->Fetch();
-      //   auto av = FlatVector::GetData<int>(ar->data[0]);
-      //   cout << oid << "," << item.first << "," << av[0] << "," <<
-      //   item.second
-      //        << endl;
-      // }
+        for (auto &item : val) {
+          {
+            auto a = dconn.Query("SELECT drug FROM Rdrug WHERE drug_d = " +
+                                 to_string(item.first));
+            auto ar = a->Fetch();
+            auto av = FlatVector::GetData<int>(ar->data[0]);
+            cout << oid << "," << item.first << "," << av[0] << ","
+                 << item.second << endl;
+          }
+        }
+      }
+
+      fResChunk = fRes->Fetch();
     }
+    cout << "resCnt: " << resCnt << endl;
 
-    fResChunk = fRes->Fetch();
+    t9UnpinBuffer(E->getArrayName());
+  } else {
+    auto fRes = dconn.Query(
+        "SELECT DISTINCT Rdrug.drug_d, Rdrug.drug "
+        "FROM Prescription, Rdrug "
+        "WHERE Rdrug.drug = Prescription.drug_id AND Prescription.patient_id "
+        "= " +
+        to_string(patientId));
+    auto page = t9GetBuffer(E->getArrayName());
+    auto fResChunk = fRes->Fetch();
+    size_t resCnt = 0;
+    while (fResChunk) {
+      auto drugVec = FlatVector::GetData<int>(fResChunk->data[0]);
+      auto originalDrugIdVec = FlatVector::GetData<int>(fResChunk->data[1]);
+      for (int i = 0; i < fResChunk->size(); ++i) {
+        auto id = drugVec[i];
+        auto oid = originalDrugIdVec[i];
+        auto val = t9GetValues(dconn, page, id);
+        resCnt += val.size();  // not to be eliminated
+      }
+
+      fResChunk = fRes->Fetch();
+    }
+    cout << "resCnt: " << resCnt << endl;
+
+    t9UnpinBuffer(E->getArrayName());
   }
-  cout << "resCnt: " << resCnt << endl;
-
-  t9UnpinBuffer(E->getArrayName());
 
   cout << "[TASK9] DONE" << endl;
 }

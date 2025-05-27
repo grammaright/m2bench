@@ -64,23 +64,43 @@ void timer(void (*f)()) {
 }
 
 int main(int argc, char *argv[]) {
-  cout << "POLYGLOT TEST" << endl;
-  timer(T0, 50);
+  int SF = 1;
+  int task = -1;
+  bool isValidation = 0;
+  if (argc != 4) {
+    cout << "usage: m2bench <TASK_NUM> <SF> <IS_VALIDATION>" << endl;
+    cout << "\te.g.,: `m2bench 0 5 1` will execute task 0 with SF=5 in "
+            "validation mode (checking the answer is correct)."
+         << endl;
+    return 0;
+  }
 
-  //   timer(T2);
-  return 0;
+  task = atoi(argv[1]);
+  SF = atoi(argv[2]);
+  isValidation = (atoi(argv[3]) == 0) ? false : true;
 
-  int patient_id = 9;
-  timer(T9, patient_id);
-
-  int Z1 = 5, Z2 = 10;
-  timer(T14, Z1, Z2);
-
-  double CLON = -118.0614431, CLAT = 34.068509;
-  timer(T15, Z1, Z2, CLON, CLAT);
-
-  long ts = 1600182000 + 10800 * 3.5;
-  timer(T16, ts);
+  switch (task) {
+    case 0:
+      timer(T0, SF, isValidation);
+      break;
+    case 2:
+      timer(T2, SF, isValidation);
+      break;
+    case 9:
+      timer(T9, SF, isValidation);
+      break;
+    case 14:
+      timer(T14, SF, isValidation);
+      break;
+    case 15:
+      timer(T15, SF, isValidation);
+      break;
+    case 16:
+      timer(T16, SF, isValidation);
+      break;
+    default:
+      break;
+  }
 
   return 0;
 }

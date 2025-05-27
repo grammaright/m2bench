@@ -46,6 +46,7 @@ add_executable(m2bench
     src/Polyglot/ecommerce_task.cpp
     src/Polyglot/healthcare_func.cpp
     src/Polyglot/healthcare_task.cpp
+    src/Polyglot/disaster_func.cpp
     src/Polyglot/disaster_task.cpp
 
     src/Connection/Connection.cpp

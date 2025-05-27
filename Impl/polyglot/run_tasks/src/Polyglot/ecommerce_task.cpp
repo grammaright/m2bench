@@ -18,7 +18,7 @@ using namespace prevision;
  *  Build a logistic regression model to predict if a user prefers the given
  * brand.
  */
-void T0(int brand_id) {
+void T0(int SF, bool isValidation) {
   const int givenBrandId = 50;
 
   // No SF!! the original M2Bench cuts the data to 9949 and 300
@@ -33,7 +33,6 @@ void T0(int brand_id) {
   auto &dconn = conn.GetDuckdbConnection();
 
   // A
-  dconn.Query("DROP TABLE IF EXISTS TASK_NEW_B2_TEMPTABLE");
   dconn.Query(
       "CREATE TEMPORARY TABLE TASK_NEW_A_TEMPTABLE AS "
       "SELECT p.person_id, h.tag_id "
@@ -160,11 +159,10 @@ void T0(int brand_id) {
  *      E: SELECT pid FROM D WHERE cid=‘x’ AND val > 4 // Relational
  *
  */
-void T2() {
+void T2(int SF, bool isValidation) {
   PolyglotConnection conn(true, "ecommerce", true);
   auto &dconn = conn.GetDuckdbConnection();
 
-  const int SF = 1;
   const int customerSize = 9946 * SF;  // only use customers in A
   const int productSize = 1254 * SF;   // only use products in A
   const int rank = 50;
@@ -185,11 +183,6 @@ void T2() {
       "order_.data) "
       "GROUP BY doc_get_string('customer_id', order_.data), "
       "doc_get_string('product_id', review.data)");
-  dconn.Query(
-      "CREATE TEMPORARY TABLE Rating_history ("
-      "customer_id VARCHAR(20),"
-      "product_id CHAR(10),"
-      "rating INT)");
   Appender rhAppender(dconn, "Rating_history");
   auto resChunk = res->Fetch();
   while (resChunk) {
@@ -216,18 +209,21 @@ void T2() {
   //     "CREATE INDEX Rating_history_idx2 on "
   //     "Rating_history(product_id)");
 
-  // dconn.Query(
-  //     "CREATE TEMPORARY TABLE Rcustomer as "
-  //     "(SELECT t.customer_id, (ROW_NUMBER() OVER () - 1)::INTEGER as "
-  //     "customer_id_d from "
-  //     "(Select distinct(customer_id) as customer_id "
-  //     "from Rating_history order by customer_id) as t )");
-  dconn.Query(
-      "CREATE TEMPORARY TABLE Rcustomer as "
-      "(SELECT t.customer_id, (ROW_NUMBER() OVER () - 1)::INTEGER as "
-      "customer_id_d from "
-      "(Select distinct(customer_id) as customer_id "
-      "from Rating_history) as t )");
+  if (isValidation) {
+    dconn.Query(
+        "CREATE TEMPORARY TABLE Rcustomer as "
+        "(SELECT t.customer_id, (ROW_NUMBER() OVER () - 1)::INTEGER as "
+        "customer_id_d from "
+        "(Select distinct(customer_id) as customer_id "
+        "from Rating_history order by customer_id) as t )");
+  } else {
+    dconn.Query(
+        "CREATE TEMPORARY TABLE Rcustomer as "
+        "(SELECT t.customer_id, (ROW_NUMBER() OVER () - 1)::INTEGER as "
+        "customer_id_d from "
+        "(Select distinct(customer_id) as customer_id "
+        "from Rating_history) as t )");
+  }
 
   dconn.Query(
       "CREATE TEMPORARY TABLE Rproduct as "
@@ -247,8 +243,9 @@ void T2() {
   auto X = prevision::OpenArray("__X");
   auto W = prevision::Full<double>({(uint32_t)customerSize, rank},
                                    {(uint32_t)customerSize, rank}, 1.0);
-  auto H = prevision::Full<double>({(uint32_t)rank, productSize},
-                                   {(uint32_t)rank, productSize}, 1.0);
+  auto H =
+      prevision::Full<double>({(uint32_t)rank, (uint32_t)productSize},
+                              {(uint32_t)rank, (uint32_t)productSize}, 1.0);
 
   std::vector<uint32_t> tDimOrder = {1, 0};
   for (int iter = 0; iter < numIter; iter++) {

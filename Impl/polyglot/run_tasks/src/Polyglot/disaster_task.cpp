@@ -10,118 +10,6 @@ using namespace std;
 using namespace duckdb;
 using namespace arangodb::velocypack;
 
-PFpage *t14GetBuffer(string arrName) {
-  // assume that there is only one tile
-  uint64_t dcoords[] = {0, 0, 0};
-
-  PFpage *page;
-  array_key key;
-  key.arrayname = new char[arrName.size()];
-  memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
-  key.dcoords = dcoords;
-  key.dim_len = 3;
-  key.emptytile_template = BF_EMPTYTILE_NONE;
-
-  BF_GetBuf(key, &page);
-
-  delete key.arrayname;
-
-  return page;
-}
-
-void t14UnpinBuffer(string arrName) {
-  uint64_t dcoords[] = {0, 0, 0};
-
-  array_key key;
-  key.arrayname = new char[arrName.size()];
-  memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
-  key.dcoords = dcoords;
-  key.dim_len = 3;
-  key.emptytile_template = BF_EMPTYTILE_NONE;
-  BF_UnpinBuf(key);
-
-  delete key.arrayname;
-}
-
-PFpage *t15GetBuffer(string arrName) {
-  // assume that there is only one tile
-  uint64_t dcoords[] = {0, 0};
-
-  PFpage *page;
-  array_key key;
-  key.arrayname = new char[arrName.size()];
-  memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
-  key.dcoords = dcoords;
-  key.dim_len = 2;
-  key.emptytile_template = BF_EMPTYTILE_NONE;
-
-  BF_GetBuf(key, &page);
-
-  delete key.arrayname;
-
-  return page;
-}
-
-void t15UnpinBuffer(string arrName) {
-  uint64_t dcoords[] = {0, 0};
-
-  array_key key;
-  key.arrayname = new char[arrName.size()];
-  memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
-  key.dcoords = dcoords;
-  key.dim_len = 2;
-  key.emptytile_template = BF_EMPTYTILE_NONE;
-  BF_UnpinBuf(key);
-
-  delete key.arrayname;
-}
-
-void ChunkProcessing(PolyglotConnection &conn,
-                     std::shared_ptr<prevision::ArrayQuery> in, int start,
-                     int end, int farStart) {
-  auto &dconn = conn.GetDuckdbConnection();
-  auto pvEngine = conn.GetPrevisionEngine();
-
-  std::vector<uint32_t> _begin = {(uint32_t)start, 0, 0},
-                        _end = {(uint32_t)end + 1, 523, 523},
-                        _tilesize = {(uint32_t)end + 1 - start, 523, 523};
-
-  auto B = prevision::Subarray(in, {_begin, _end}, _tilesize);
-  auto C = prevision::Topk(B, prevision::TopkType::MAX, 1);
-  pvEngine->Execute(*C);
-
-  // get buffer
-  PFpage *page = t14GetBuffer(C->getArrayName());
-
-  // insert data to D1
-  uint64_t *ts = bf_util_pagebuf_get_coords(page, 0);
-  uint64_t *lat = bf_util_pagebuf_get_coords(page, 1);
-  uint64_t *lon = bf_util_pagebuf_get_coords(page, 2);
-  double *buf = (double *)bf_util_get_pagebuf(page);
-
-  dconn
-      .Query(
-          "INSERT INTO D1 VALUES( "
-          "doc_make('{\"longitude\": " +
-          to_string(lon[0]) +
-          ", "
-          "\"latitude\": " +
-          to_string(lat[0]) +
-          ", "
-          "\"date\": " +
-          to_string(((int)ts[0] + farStart + start) / 8) +
-          ", "
-          "\"timestamp\": " +
-          to_string(ts[0] + farStart + start) +
-          ", "
-          "\"pm10_avg\": " +
-          to_string(buf[0]) + "}'))")
-      ->Print();
-
-  // unpin buffer
-  t14UnpinBuffer(C->getArrayName());
-}
-
 /*
  * [Task 14] Sources of Fine Dust.
  *
@@ -130,8 +18,7 @@ void ChunkProcessing(PolyglotConnection &conn,
  * Use window aggregation with a size of 5. (Document, Array) -> Document
  *
  */
-void T14(int z1, int z2) {
-  const int SF = 1;
+void T14(int SF, bool isValidation) {
   const int Z1 = 5 * SF;
   const int Z2 = 10 * SF;
 
@@ -168,13 +55,13 @@ void T14(int z1, int z2) {
 
   dconn
       .Query(
-          "SELECT doc_make('{\"date\": ' || doc_get_int32('date', data) || ', "
+          "SELECT '{\"date\": ' || doc_get_int32('date', data) || ', "
           "\"timestamp\": ' || doc_get_int32('timestamp', data) || ', "
           "\"site_id\": ' || "
           "doc_st_closest_object_id('Site_centroid', "
           "[(doc_get_int32('longitude', data)::DOUBLE * 0.000216636 - "
           "118.34501002237936), (doc_get_int32('latitude', data)::DOUBLE * "
-          "0.000172998 + 34.011898718557454)]) || '}') AS data "
+          "0.000172998 + 34.011898718557454)]) || '}' "
           "FROM D1 "
           "ORDER BY doc_get_int32('date', data)")
       ->Print();
@@ -190,7 +77,10 @@ void T14(int z1, int z2) {
  * Document, Array) -> Relational
  *
  */
-void T15(int Z1, int Z2, double lon, double lat) {
+void T15(int SF, bool isValidation) {
+  int Z1 = 5 * SF, Z2 = 10 * SF;
+  double lon = -118.0614431, lat = 34.068509;
+
   PolyglotConnection conn(true, "disaster", true);
   auto &dconn = conn.GetDuckdbConnection();
   auto pvEngine = conn.GetPrevisionEngine();
@@ -251,7 +141,7 @@ void T15(int Z1, int Z2, double lon, double lat) {
   auto B1 = Topk(A, prevision::TopkType::MAX, 1);
   pvEngine->Execute(*B1);
 
-  PFpage *page = t15GetBuffer(B1->getArrayName());
+  PFpage *page = t15t16GetBuffer(B1->getArrayName());
 
   uint64_t *latBuf = bf_util_pagebuf_get_coords(page, 0);
   uint64_t *lonBuf = bf_util_pagebuf_get_coords(page, 1);
@@ -283,24 +173,15 @@ void T15(int Z1, int Z2, double lon, double lat) {
       "34.011898718557454)::DOUBLE], 'roadnode')";
 
   dconn
-      .Query("SELECT doc_make('{\"start\": ' || " + startStr +
+      .Query("SELECT '{\"start\": ' || " + startStr +
              " || ', "
              "\"end\": ' || " +
              endStr +
-             " || '}') AS data "
+             " || '}' "
              "FROM B1")
       ->Print();
-  // for validation
-  // dconn
-  //     .Query("SELECT doc_make_json(doc_make('{\"start\": ' || " + startStr +
-  //            " || ', "
-  //            "\"end\": ' || " +
-  //            endStr +
-  //            " || '}')) AS data "
-  //            "FROM B1")
-  //     ->Print();
 
-  t15UnpinBuffer(B1->getArrayName());
+  t15t16UnpinBuffer(B1->getArrayName());
 
   cout << "[TASK15]: END" << endl;
 }
@@ -323,8 +204,8 @@ void T15(int Z1, int Z2, double lon, double lat) {
  *          Map.properties.building = 'school' //Document
  *
  */
-void T16(long timestamp) {
-  const int SF = 1;
+void T16(int SF, bool isValidation) {
+  long ts = 1600182000 + 10800 * 3.5;
   int Z1 = 3 * SF;
   int Z2 = 4 * SF;
 
@@ -356,7 +237,6 @@ void T16(long timestamp) {
       "AND "
       "doc_get_string('properties.description', data) = "
       "'school'";
-  // dconn.Query("SELECT doc_make_json(data) FROM (" + nested + ")")->Print();
 
   // manual unnesting three times
   string unnested =
@@ -375,8 +255,6 @@ void T16(long timestamp) {
       "(" +
       unnested + ") ";
 
-  // dconn.Query("SELECT doc_make_json(data) FROM (" + unnested + ")")->Print();
-
   string refined =
       "SELECT doc_make('{\"site_id\": ' || "
       "doc_get_int32('site_id', data) || "
@@ -393,33 +271,33 @@ void T16(long timestamp) {
       unnested +
       ") "
       "GROUP BY doc_get_int32('site_id', data)";
-  string final = "SELECT * FROM (" + refined +
-                 ") "
-                 "WHERE 0 <= doc_get_int32('longitude', data) AND "
-                 "doc_get_int32('longitude', data) <= 522 AND "
-                 "0 <= doc_get_int32('latitude', data) AND "
-                 "doc_get_int32('latitude', data) <= 522";
+  string final =
+      "SELECT doc_get_int32('site_id', data), "
+      "doc_get_int32('longitude', data), "
+      "doc_get_int32('latitude', data) "
+      " FROM (" +
+      refined +
+      ") "
+      "WHERE 0 <= doc_get_int32('longitude', data) AND "
+      "doc_get_int32('longitude', data) <= 522 AND "
+      "0 <= doc_get_int32('latitude', data) AND "
+      "doc_get_int32('latitude', data) <= 522";
 
-  // FIXME: rename the function
-  PFpage *page = t15GetBuffer(A->getArrayName());
-
-  dconn.Query("CREATE TEMP TABLE RES (data VPACK)");
-  Appender resAppender(dconn, "RES");
+  PFpage *page = t15t16GetBuffer(A->getArrayName());
 
   int cnt = 0;
   auto res = dconn.Query(final);
   auto resChunk = res->Fetch();
   while (resChunk) {
+    auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
+    auto longitudeVec = FlatVector::GetData<int>(resChunk->data[1]);
+    auto latitudeVec = FlatVector::GetData<int>(resChunk->data[2]);
     double *buf = (double *)bf_util_get_pagebuf(page);
-    for (int i = 0; i < resChunk->size(); ++i) {
-      int site_id, latitude, longitude;
-      auto val = resChunk->GetValue(0, i).GetValueUnsafe<std::string>();
-      auto raw = val.c_str();
-      Slice s((const uint8_t *)raw);
 
-      site_id = s.get("site_id").getInt();
-      longitude = s.get("longitude").getInt();
-      latitude = s.get("latitude").getInt();
+    for (int i = 0; i < resChunk->size(); ++i) {
+      int site_id = siteIdVec[i];
+      int longitude = longitudeVec[i];
+      int latitude = latitudeVec[i];
 
       uint64_t idx = latitude * 523 + longitude;
       if (bf_util_is_cell_null(page, idx)) continue;
@@ -436,21 +314,16 @@ void T16(long timestamp) {
       auto value =
           duckdb::Value::BLOB((const_data_ptr_t)data.data, data.length);
 
-      resAppender.BeginRow();
-      resAppender.Append(value);
-      resAppender.EndRow();
-
       cout << "site_id=" << site_id << ", latitude=" << latitude
            << ", longitude=" << longitude << ", val=" << buf[idx] << endl;
       ++cnt;
     }
 
-    resAppender.Flush();
     resChunk = res->Fetch();
   }
 
-  t15UnpinBuffer(A->getArrayName());
-  cout << cnt;
+  t15t16UnpinBuffer(A->getArrayName());
+  cout << "cnt=" << cnt << endl;
 
   cout << "[TASK16]: DONE" << endl;
 }
