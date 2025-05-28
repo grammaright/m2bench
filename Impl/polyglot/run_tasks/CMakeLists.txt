@@ -17,6 +17,9 @@ if(!BLAS_FOUND)
     return()
 endif()
 
+# spdlog
+find_package(spdlog CONFIG REQUIRED)
+
 include_directories(${BLAS_INCLUDE_DIRS})
 
 include(FetchContent)
@@ -53,6 +56,7 @@ target_link_libraries(m2bench PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libspatialindex/build/src/libspatialindex.so"
     duckdb 
     "$ENV{PREVISION_PATH}/build/libprevision.so"
+    spdlog::spdlog
     ${BLAS_LIBRARIES}
     m rt pthread)
 
