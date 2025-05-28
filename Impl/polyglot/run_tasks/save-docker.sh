@@ -1,0 +1,1 @@
+sudo docker save grammaright/polyglot-improved:latest | gzip > polyglot-improved.tar.gz

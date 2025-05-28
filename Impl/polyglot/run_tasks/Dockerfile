@@ -80,7 +80,7 @@ RUN cd /data/m2bench/Impl/polyglot/run_tasks/thirdparty/libspatialindex && \
 RUN cd /data/m2bench/Impl/polyglot/run_tasks && \
     cmake --preset=default && \
     cmake --build build
-ENV M2_PATH=/data/m2bench/Impl/run_tasks/
+ENV M2_PATH=/data/m2bench/Impl/polyglot/run_tasks
 
 # Install spatial extension
 RUN mkdir -p /root/.duckdb/extensions/$(cd /data/duckdb-spatial/duckdb/; git rev-parse --short HEAD)/linux_amd64/

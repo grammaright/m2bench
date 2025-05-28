@@ -53,19 +53,20 @@ void T14(int SF, bool isValidation) {
   }
   ChunkProcessing(conn, A, curr, len, start);
 
-  dconn
-      .Query(
-          "SELECT '{\"date\": ' || doc_get_int32('date', data) || ', "
-          "\"timestamp\": ' || doc_get_int32('timestamp', data) || ', "
-          "\"site_id\": ' || "
-          "doc_st_closest_object_id_composite_string('Site_centroid', "
-          "'properties.type', "
-          "[(doc_get_int32('longitude', data)::DOUBLE * 0.000216636 - "
-          "118.34501002237936), (doc_get_int32('latitude', data)::DOUBLE * "
-          "0.000172998 + 34.011898718557454)], 'building') || '}' "
-          "FROM D1 "
-          "ORDER BY doc_get_int32('date', data)")
-      ->Print();
+  auto finalRes = dconn.Query(
+      "SELECT '{\"date\": ' || doc_get_int32('date', data) || ', "
+      "\"timestamp\": ' || doc_get_int32('timestamp', data) || ', "
+      "\"site_id\": ' || "
+      "doc_st_closest_object_id_composite_string('Site_centroid', "
+      "'properties.type', "
+      "[(doc_get_int32('longitude', data)::DOUBLE * 0.000216636 - "
+      "118.34501002237936), (doc_get_int32('latitude', data)::DOUBLE * "
+      "0.000172998 + 34.011898718557454)], 'building') || '}' "
+      "FROM D1 "
+      "ORDER BY doc_get_int32('date', data)");
+  if (isValidation) {
+    finalRes->Print();
+  }
 
   cout << "[TASK14]: END" << endl;
 }
@@ -173,14 +174,15 @@ void T15(int SF, bool isValidation) {
       "(doc_get_int32('latitude', B1.data) * 0.000172998 + "
       "34.011898718557454)::DOUBLE], 'roadnode')";
 
-  dconn
-      .Query("SELECT '{\"start\": ' || " + startStr +
-             " || ', "
-             "\"end\": ' || " +
-             endStr +
-             " || '}' "
-             "FROM B1")
-      ->Print();
+  auto finalRes = dconn.Query("SELECT '{\"start\": ' || " + startStr +
+                              " || ', "
+                              "\"end\": ' || " +
+                              endStr +
+                              " || '}' "
+                              "FROM B1");
+  if (isValidation) {
+    finalRes->Print();
+  }
 
   t15t16UnpinBuffer(B1->getArrayName());
 
@@ -287,40 +289,76 @@ void T16(int SF, bool isValidation) {
   PFpage *page = t15t16GetBuffer(A->getArrayName());
 
   int cnt = 0;
-  auto res = dconn.Query(final);
-  auto resChunk = res->Fetch();
-  while (resChunk) {
-    auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
-    auto longitudeVec = FlatVector::GetData<int>(resChunk->data[1]);
-    auto latitudeVec = FlatVector::GetData<int>(resChunk->data[2]);
-    double *buf = (double *)bf_util_get_pagebuf(page);
+  if (isValidation) {
+    auto res = dconn.Query(final);
+    auto resChunk = res->Fetch();
+    while (resChunk) {
+      auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
+      auto longitudeVec = FlatVector::GetData<int>(resChunk->data[1]);
+      auto latitudeVec = FlatVector::GetData<int>(resChunk->data[2]);
+      double *buf = (double *)bf_util_get_pagebuf(page);
 
-    for (int i = 0; i < resChunk->size(); ++i) {
-      int site_id = siteIdVec[i];
-      int longitude = longitudeVec[i];
-      int latitude = latitudeVec[i];
+      for (int i = 0; i < resChunk->size(); ++i) {
+        int site_id = siteIdVec[i];
+        int longitude = longitudeVec[i];
+        int latitude = latitudeVec[i];
 
-      uint64_t idx = latitude * 523 + longitude;
-      if (bf_util_is_cell_null(page, idx)) continue;
+        uint64_t idx = latitude * 523 + longitude;
+        if (bf_util_is_cell_null(page, idx)) continue;
 
-      Builder b2;
-      b2.add(arangodb::velocypack::Value(ValueType::Object));
-      b2.add("site_id", arangodb::velocypack::Value(site_id));
-      b2.add("latitude", arangodb::velocypack::Value(latitude));
-      b2.add("longitude", arangodb::velocypack::Value(longitude));
-      b2.add("pm10_avg", arangodb::velocypack::Value(buf[idx]));
-      b2.close();
+        Builder b2;
+        b2.add(arangodb::velocypack::Value(ValueType::Object));
+        b2.add("site_id", arangodb::velocypack::Value(site_id));
+        b2.add("latitude", arangodb::velocypack::Value(latitude));
+        b2.add("longitude", arangodb::velocypack::Value(longitude));
+        b2.add("pm10_avg", arangodb::velocypack::Value(buf[idx]));
+        b2.close();
 
-      auto data = HexDump(b2.slice());
-      auto value =
-          duckdb::Value::BLOB((const_data_ptr_t)data.data, data.length);
+        auto data = HexDump(b2.slice());
+        auto value =
+            duckdb::Value::BLOB((const_data_ptr_t)data.data, data.length);
 
-      cout << "site_id=" << site_id << ", latitude=" << latitude
-           << ", longitude=" << longitude << ", val=" << buf[idx] << endl;
-      ++cnt;
+        cout << "site_id=" << site_id << ", latitude=" << latitude
+             << ", longitude=" << longitude << ", val=" << buf[idx] << endl;
+        ++cnt;
+      }
+
+      resChunk = res->Fetch();
     }
+  } else {
+    auto res = dconn.Query(final);
+    auto resChunk = res->Fetch();
+    while (resChunk) {
+      auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
+      auto longitudeVec = FlatVector::GetData<int>(resChunk->data[1]);
+      auto latitudeVec = FlatVector::GetData<int>(resChunk->data[2]);
+      double *buf = (double *)bf_util_get_pagebuf(page);
 
-    resChunk = res->Fetch();
+      for (int i = 0; i < resChunk->size(); ++i) {
+        int site_id = siteIdVec[i];
+        int longitude = longitudeVec[i];
+        int latitude = latitudeVec[i];
+
+        uint64_t idx = latitude * 523 + longitude;
+        if (bf_util_is_cell_null(page, idx)) continue;
+
+        Builder b2;
+        b2.add(arangodb::velocypack::Value(ValueType::Object));
+        b2.add("site_id", arangodb::velocypack::Value(site_id));
+        b2.add("latitude", arangodb::velocypack::Value(latitude));
+        b2.add("longitude", arangodb::velocypack::Value(longitude));
+        b2.add("pm10_avg", arangodb::velocypack::Value(buf[idx]));
+        b2.close();
+
+        auto data = HexDump(b2.slice());
+        auto value =
+            duckdb::Value::BLOB((const_data_ptr_t)data.data, data.length);
+
+        ++cnt;
+      }
+
+      resChunk = res->Fetch();
+    }
   }
 
   t15t16UnpinBuffer(A->getArrayName());
