@@ -1,3 +1,6 @@
+#include <chrono>
+#include <iomanip>
+
 #include "Connection/Connection.h"
 #include "Polyglot/func.h"
 
@@ -7,6 +10,8 @@
 
 using namespace std;
 using namespace duckdb;
+using namespace std::chrono;
+using namespace std::chrono::_V2;
 
 /**
  *  [Task9] Drug similarity (R,D=>A)
@@ -24,6 +29,10 @@ using namespace duckdb;
  */
 
 void T9(int SF, bool isValidation) {
+  uint64_t totalTime = 0, tblTime = 0, docTime = 0, arrTime = 0;
+  system_clock::time_point tblStart, docStart, arrStart;
+  auto totalStart = system_clock::now();
+
   const int patientId = 9 * SF;
   const int adverseEffectSize = 82853;
   const int drugSize = 14759;
@@ -32,6 +41,7 @@ void T9(int SF, bool isValidation) {
   auto &dconn = conn.GetDuckdbConnection();
 
   // it gives polyglot advantage
+  docStart = system_clock::now();
   auto res = dconn.Query(
       "SELECT doc_get_int32('drug_id', data), "
       "doc_get_string('adverse_effect_list.adverse_effect_name', data) "
@@ -41,11 +51,16 @@ void T9(int SF, bool isValidation) {
       "Drug) "
       "GROUP BY doc_get_int32('drug_id', data), "
       "doc_get_string('adverse_effect_list.adverse_effect_name', data)");
+  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
+
+  tblStart = system_clock::now();
   dconn.Query(
       "create temporary table D2A ( "
       " drug int, "
       " adverse_effect varchar(100) )");
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
+  // Conversion cost
   Appender d2aAppender(dconn, "D2A");
   auto resChunk = res->Fetch();
   while (resChunk) {
@@ -64,6 +79,7 @@ void T9(int SF, bool isValidation) {
     resChunk = res->Fetch();
   }
 
+  tblStart = system_clock::now();
   if (isValidation) {
     dconn.Query(
         "CREATE TEMPORARY TABLE Rdrug as "
@@ -89,15 +105,18 @@ void T9(int SF, bool isValidation) {
         "(Select distinct(adverse_effect) as adverse_effect "
         "from D2A) as t )");
   }
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
   // dconn.Query("CREATE INDEX Rdrug on Rdrug(drug)");
   // dconn.Query(
   //     "CREATE INDEX Radverse_effect on Radverse_effect(adverse_effect)");
 
-  t9ConstructD(dconn, drugSize, adverseEffectSize);
+  /* Cosine Similarity */
+  t9ConstructD(dconn, drugSize, adverseEffectSize, tblTime, arrTime);
+
+  arrStart = system_clock::now();
   auto D = prevision::OpenArray("__D");
 
-  /* Cosine Similarity */
   std::vector<uint32_t> tDimOrder = {1, 0};
   auto E1 = prevision::Matmul(D, prevision::Transpose(D, tDimOrder));
   auto E2 =
@@ -108,14 +127,24 @@ void T9(int SF, bool isValidation) {
   auto pvEngine = conn.GetPrevisionEngine();
   pvEngine->Execute(*E);
 
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
   if (isValidation) {
+    tblStart = system_clock::now();
     auto fRes = dconn.Query(
         "SELECT DISTINCT Rdrug.drug_d, Rdrug.drug "
         "FROM Prescription, Rdrug "
         "WHERE Rdrug.drug = Prescription.drug_id AND Prescription.patient_id "
         "= " +
         to_string(patientId) + " ORDER BY Rdrug.drug");
+    tblTime +=
+        duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
+
+    arrStart = system_clock::now();
     auto page = t9GetBuffer(E->getArrayName());
+    arrTime +=
+        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
     auto fResChunk = fRes->Fetch();
     size_t resCnt = 0;
     while (fResChunk) {
@@ -126,16 +155,14 @@ void T9(int SF, bool isValidation) {
         auto oid = originalDrugIdVec[i];
         auto val = t9GetValues(dconn, page, id);
         resCnt += val.size();  // not to be eliminated
-
         for (auto &item : val) {
-          {
-            auto a = dconn.Query("SELECT drug FROM Rdrug WHERE drug_d = " +
-                                 to_string(item.first));
-            auto ar = a->Fetch();
-            auto av = FlatVector::GetData<int>(ar->data[0]);
-            cout << oid << "," << item.first << "," << av[0] << ","
-                 << item.second << endl;
-          }
+          auto a = dconn.Query("SELECT drug FROM Rdrug WHERE drug_d = " +
+                               to_string(item.first));
+
+          auto ar = a->Fetch();
+          auto av = FlatVector::GetData<int>(ar->data[0]);
+          cout << oid << "," << item.first << "," << av[0] << "," << item.second
+               << endl;
         }
       }
 
@@ -143,15 +170,27 @@ void T9(int SF, bool isValidation) {
     }
     cout << "resCnt: " << resCnt << endl;
 
+    arrStart = system_clock::now();
     t9UnpinBuffer(E->getArrayName());
+    arrTime +=
+        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
   } else {
+    tblStart = system_clock::now();
     auto fRes = dconn.Query(
         "SELECT DISTINCT Rdrug.drug_d, Rdrug.drug "
         "FROM Prescription, Rdrug "
         "WHERE Rdrug.drug = Prescription.drug_id AND Prescription.patient_id "
         "= " +
         to_string(patientId));
+    tblTime +=
+        duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
+
+    arrStart = system_clock::now();
     auto page = t9GetBuffer(E->getArrayName());
+    arrTime +=
+        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
     auto fResChunk = fRes->Fetch();
     size_t resCnt = 0;
     while (fResChunk) {
@@ -168,8 +207,18 @@ void T9(int SF, bool isValidation) {
     }
     cout << "resCnt: " << resCnt << endl;
 
+    arrStart = system_clock::now();
     t9UnpinBuffer(E->getArrayName());
+    arrTime +=
+        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
   }
 
+  totalTime =
+      duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
+
   cout << "[TASK9] DONE" << endl;
+  cout << "totalTime =" << setw(12) << totalTime << " ns" << endl;
+  cout << "tblTime   =" << setw(12) << tblTime << " ns" << endl;
+  cout << "docTime   =" << setw(12) << docTime << " ns" << endl;
+  cout << "arrTime   =" << setw(12) << arrTime << " ns" << endl;
 }

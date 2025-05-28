@@ -1,4 +1,5 @@
 
+#include <chrono>
 #include <string>
 #include <tuple>
 
@@ -11,6 +12,8 @@
 
 using namespace duckdb;
 using namespace prevision;
+using namespace std::chrono;
+using namespace std::chrono::_V2;
 
 void t9_invnorm(Chunk &opnd, Chunk &result) {
   // filter diagonal values and compute 1 / sqrt(val)
@@ -85,7 +88,9 @@ void t9_invnorm(Chunk &opnd, Chunk &result) {
 }
 
 void t9ConstructD(duckdb::Connection &dconn, int drugSize,
-                  int adverseEffectSize) {
+                  int adverseEffectSize, uint64_t &tblTime, uint64_t &arrTime) {
+  auto arrStart = system_clock::now();
+
   const char *arrname = "__D";
   int domain[] = {0, drugSize - 1, 0, adverseEffectSize - 1};
   int tilesize[] = {drugSize, adverseEffectSize};
@@ -106,15 +111,20 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
 
   BF_GetBuf(key, &page);
 
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
   // copy data
+  auto tblStart = system_clock::now();
   auto aRes = dconn.Query(
       "SELECT drug_d, adverse_effect_d "
       " From Rdrug, Radverse_effect, D2A "
       " Where D2A.drug = Rdrug.drug "
       " and D2A.adverse_effect = Radverse_effect.adverse_effect "
       "ORDER BY drug_d ASC, adverse_effect_d ASC");
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
   //  set CSR page
+  arrStart = system_clock::now();
   int rowCount = aRes->RowCount();
   BF_ResizeBuf(page, rowCount);
 
@@ -122,11 +132,14 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
   uint64_t *indptr = (uint64_t *)bf_util_pagebuf_get_coords(page, 0);
   uint64_t *indices = (uint64_t *)bf_util_pagebuf_get_coords(page, 1);
   int idx = 0;
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   auto aChunk = aRes->Fetch();
   while (aChunk) {
     auto drugVec = FlatVector::GetData<int>(aChunk->data[0]);
     auto aeVec = FlatVector::GetData<int>(aChunk->data[1]);
+
+    arrStart = system_clock::now();
     for (int i = 0; i < aChunk->size(); ++i) {
       int row = drugVec[i];
       int col = aeVec[i];
@@ -136,11 +149,14 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
       xBuf[idx] = 1.f;
       ++idx;
     }
+    arrTime +=
+        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
     aChunk = aRes->Fetch();
   }
 
   // finish touch for idxptr
+  arrStart = system_clock::now();
   for (int i = 1; i < drugSize + 1; i++) {
     indptr[i] += indptr[i - 1];
   }
@@ -150,6 +166,7 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
 
   BF_TouchBuf(key);
   BF_UnpinBuf(key);
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   delete key.arrayname;
 }

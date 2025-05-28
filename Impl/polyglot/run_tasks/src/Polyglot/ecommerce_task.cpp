@@ -1,5 +1,7 @@
 #include <unistd.h>
 
+#include <chrono>
+#include <iomanip>
 #include <string>
 #include <tuple>
 
@@ -13,12 +15,19 @@
 using namespace duckdb;
 using namespace prevision;
 
+using namespace std::chrono;
+using namespace std::chrono::_V2;
+
 /**
  *  [Task 0] Building a Logistic Model ([R, D, G, A] => A).
  *  Build a logistic regression model to predict if a user prefers the given
  * brand.
  */
 void T0(int SF, bool isValidation) {
+  uint64_t totalTime = 0, tblTime = 0, docTime = 0, arrTime = 0;
+  system_clock::time_point tblStart, docStart, arrStart;
+  auto totalStart = system_clock::now();
+
   const int givenBrandId = 50;
 
   // No SF!! the original M2Bench cuts the data to 9949 and 300
@@ -33,16 +42,19 @@ void T0(int SF, bool isValidation) {
   auto &dconn = conn.GetDuckdbConnection();
 
   // A
+  tblStart = system_clock::now();
   dconn.Query(
       "CREATE TEMPORARY TABLE TASK_NEW_A_TEMPTABLE AS "
       "SELECT p.person_id, h.tag_id "
       "FROM Person p "
       "JOIN Interested_in i ON p.person_id = i._from "
       "JOIN Hashtag h ON i._to = h.tag_id");
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
   // B
   // Get pairs of customer_id and product_id that the customer gives the
   // highest rating score.
+  docStart = system_clock::now();
   auto res = dconn.Query(
       "SELECT doc_get_string('customer_id', order_.data), "
       "doc_get_string('product_id', review.data) "
@@ -51,13 +63,17 @@ void T0(int SF, bool isValidation) {
       "doc_get_string('order_id', "
       "order_.data) AND "
       "doc_get_int32('rating', review.data) = 5");
+  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
+  tblStart = system_clock::now();
   dconn.Query(
       "CREATE TEMPORARY TABLE TASK_NEW_B2_TEMPTABLE_2 ("
       "person_id INT, "
       "brand_id INT)");
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
   Appender b2t2Appender(dconn, "TASK_NEW_B2_TEMPTABLE_2");
 
+  // communication cost here
   auto resChunk = res->Fetch();
   while (resChunk) {
     auto customerIdVec = FlatVector::GetData<string_t>(resChunk->data[0]);
@@ -65,14 +81,20 @@ void T0(int SF, bool isValidation) {
     for (int i = 0; i < resChunk->size(); i++) {
       auto customerId = customerIdVec[i];
       auto productId = productIdVec[i];
-
+      tblStart = system_clock::now();
       auto cRes =
           dconn.Query("SELECT person_id FROM Customer WHERE customer_id = '" +
                       customerId.GetString() + "'");
+      tblTime +=
+          duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
       auto personId = FlatVector::GetData<int>(cRes->Fetch()->data[0])[0];
+
+      tblStart = system_clock::now();
       auto pRes =
           dconn.Query("SELECT brand_id FROM Product WHERE product_id = '" +
                       productId.GetString() + "'");
+      tblTime +=
+          duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
       auto brandId = FlatVector::GetData<int>(pRes->Fetch()->data[0])[0];
 
       b2t2Appender.BeginRow();
@@ -86,6 +108,7 @@ void T0(int SF, bool isValidation) {
   }
 
   // Create table for storing aggregated results
+  tblStart = system_clock::now();
   dconn.Query(
       "CREATE TEMP TABLE TASK_NEW_B2_TEMPTABLE ("
       "person_id INT, "
@@ -115,12 +138,14 @@ void T0(int SF, bool isValidation) {
       "WHERE t1.person_id = t2.person_id "
       "AND t1.cnt = t2.max_cnt "
       "GROUP BY t1.person_id");
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
   // logistic regression of F
-  t0ConstructX(dconn, personSize, tagSize);
-  t0ConstructY(dconn, personSize, givenBrandId);
+  t0ConstructX(dconn, personSize, tagSize, tblTime, arrTime);
+  t0ConstructY(dconn, personSize, givenBrandId, tblTime, arrTime);
 
   // logistic regression
+  arrStart = system_clock::now();
   auto X = prevision::OpenArray("__X");  // 12
   auto y = prevision::OpenArray("__y");  // 13
   auto w = prevision::Full<double>({(uint32_t)tagSize, 1},
@@ -138,8 +163,15 @@ void T0(int SF, bool isValidation) {
 
   auto pvEngine = conn.GetPrevisionEngine();
   pvEngine->Execute(*w);
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+  totalTime =
+      duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
 
   cout << "[TASK 0]: DONE" << endl;
+  cout << "totalTime =" << setw(12) << totalTime << " ns" << endl;
+  cout << "tblTime   =" << setw(12) << tblTime << " ns" << endl;
+  cout << "docTime   =" << setw(12) << docTime << " ns" << endl;
+  cout << "arrTime   =" << setw(12) << arrTime << " ns" << endl;
   return;
 }
 
@@ -160,6 +192,10 @@ void T0(int SF, bool isValidation) {
  *
  */
 void T2(int SF, bool isValidation) {
+  uint64_t totalTime = 0, tblTime = 0, docTime = 0, arrTime = 0;
+  system_clock::time_point tblStart, docStart, arrStart;
+  auto totalStart = system_clock::now();
+
   PolyglotConnection conn(true, "ecommerce", true);
   auto &dconn = conn.GetDuckdbConnection();
 
@@ -168,11 +204,15 @@ void T2(int SF, bool isValidation) {
   const int rank = 50;
   const int numIter = 1;
 
+  tblStart = system_clock::now();
   dconn.Query(
       "CREATE TEMPORARY TABLE Rating_history("
       "customer_id varchar(20),"
       "product_id CHAR(10),"
       "rating int)");
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
+
+  docStart = system_clock::now();
   auto res = dconn.Query(
       "SELECT doc_get_string('customer_id', order_.data), "
       "doc_get_string('product_id', review.data), "
@@ -183,6 +223,9 @@ void T2(int SF, bool isValidation) {
       "order_.data) "
       "GROUP BY doc_get_string('customer_id', order_.data), "
       "doc_get_string('product_id', review.data)");
+  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
+
+  // Conversion cost
   Appender rhAppender(dconn, "Rating_history");
   auto resChunk = res->Fetch();
   while (resChunk) {
@@ -209,6 +252,7 @@ void T2(int SF, bool isValidation) {
   //     "CREATE INDEX Rating_history_idx2 on "
   //     "Rating_history(product_id)");
 
+  tblStart = system_clock::now();
   if (isValidation) {
     dconn.Query(
         "CREATE TEMPORARY TABLE Rcustomer as "
@@ -224,13 +268,16 @@ void T2(int SF, bool isValidation) {
         "(Select distinct(customer_id) as customer_id "
         "from Rating_history) as t )");
   }
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
+  tblStart = system_clock::now();
   dconn.Query(
       "CREATE TEMPORARY TABLE Rproduct as "
       "(SELECT t.product_id, (ROW_NUMBER() OVER () - 1)::INTEGER as "
       "product_id_d "
       "from (Select distinct(product_id) as product_id "
       "from Rating_history) as t )");
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
   // dconn.Query(
   //     "CREATE INDEX Rcustomer_idx on "
@@ -238,7 +285,9 @@ void T2(int SF, bool isValidation) {
   // dconn.Query("CREATE INDEX Rproduct_idx on Rproduct(product_id)");
 
   /* Non-negative matrix factorization */
-  t2ConstructX(dconn, customerSize, productSize);
+  t2ConstructX(dconn, customerSize, productSize, tblTime, arrTime);
+
+  arrStart = system_clock::now();
 
   auto X = prevision::OpenArray("__X");
   auto W = prevision::Full<double>({(uint32_t)customerSize, rank},
@@ -265,5 +314,13 @@ void T2(int SF, bool isValidation) {
   auto pvEngine = conn.GetPrevisionEngine();
   pvEngine->Execute(*W);
 
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+  totalTime =
+      duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
+
   cout << "[TASK2] DONE" << endl;
+  cout << "totalTime =" << setw(12) << totalTime << " ns" << endl;
+  cout << "tblTime   =" << setw(12) << tblTime << " ns" << endl;
+  cout << "docTime   =" << setw(12) << docTime << " ns" << endl;
+  cout << "arrTime   =" << setw(12) << arrTime << " ns" << endl;
 }

@@ -1,3 +1,6 @@
+#include <chrono>
+#include <iomanip>
+
 #include "Connection/Connection.h"
 #include "Polyglot/func.h"
 #include "velocypack/vpack.h"
@@ -10,6 +13,9 @@ using namespace std;
 using namespace duckdb;
 using namespace arangodb::velocypack;
 
+using namespace std::chrono;
+using namespace std::chrono::_V2;
+
 /*
  * [Task 14] Sources of Fine Dust.
  *
@@ -19,12 +25,17 @@ using namespace arangodb::velocypack;
  *
  */
 void T14(int SF, bool isValidation) {
+  uint64_t totalTime = 0, tblTime = 0, docTime = 0, arrTime = 0;
+  system_clock::time_point tblStart, docStart, arrStart;
+  auto totalStart = system_clock::now();
+
   const int Z1 = 5 * SF;
   const int Z2 = 10 * SF;
 
   PolyglotConnection conn(true, "disaster", true);
   auto &dconn = conn.GetDuckdbConnection();
 
+  arrStart = system_clock::now();
   auto finedust = prevision::OpenArray("finedust");
   auto pm10 = prevision::Project(finedust, {0});
 
@@ -43,16 +54,21 @@ void T14(int SF, bool isValidation) {
     a++;
   }
 
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
+  docStart = system_clock::now();
   dconn.Query("CREATE TEMP TABLE D1 (data VPACK)");
+  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
   int curr = (a * 8) % start;
-  ChunkProcessing(conn, A, 0, curr - 1, start);
+  ChunkProcessing(conn, A, 0, curr - 1, start, docTime, arrTime);
   while (curr + 8 <= len) {
-    ChunkProcessing(conn, A, curr, curr + 7, start);
+    ChunkProcessing(conn, A, curr, curr + 7, start, docTime, arrTime);
     curr += 8;
   }
-  ChunkProcessing(conn, A, curr, len, start);
+  ChunkProcessing(conn, A, curr, len, start, docTime, arrTime);
 
+  docStart = system_clock::now();
   auto finalRes = dconn.Query(
       "SELECT '{\"date\": ' || doc_get_int32('date', data) || ', "
       "\"timestamp\": ' || doc_get_int32('timestamp', data) || ', "
@@ -67,8 +83,15 @@ void T14(int SF, bool isValidation) {
   if (isValidation) {
     finalRes->Print();
   }
+  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
+  totalTime =
+      duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
 
   cout << "[TASK14]: END" << endl;
+  cout << "totalTime =" << setw(12) << totalTime << " ns" << endl;
+  cout << "tblTime   =" << setw(12) << tblTime << " ns" << endl;
+  cout << "docTime   =" << setw(12) << docTime << " ns" << endl;
+  cout << "arrTime   =" << setw(12) << arrTime << " ns" << endl;
 }
 
 /*
@@ -80,6 +103,10 @@ void T14(int SF, bool isValidation) {
  *
  */
 void T15(int SF, bool isValidation) {
+  uint64_t totalTime = 0, tblTime = 0, docTime = 0, arrTime = 0;
+  system_clock::time_point tblStart, docStart, arrStart;
+  auto totalStart = system_clock::now();
+
   int Z1 = 5 * SF, Z2 = 10 * SF;
   double lon = -118.0614431, lat = 34.068509;
 
@@ -87,6 +114,7 @@ void T15(int SF, bool isValidation) {
   auto &dconn = conn.GetDuckdbConnection();
   auto pvEngine = conn.GetPrevisionEngine();
 
+  arrStart = system_clock::now();
   auto finedust = prevision::OpenArray("finedust");
   auto pm10 = prevision::Project(finedust, {0});
 
@@ -149,6 +177,9 @@ void T15(int SF, bool isValidation) {
   uint64_t *lonBuf = bf_util_pagebuf_get_coords(page, 1);
   double *buf = (double *)bf_util_get_pagebuf(page);
 
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
+  docStart = system_clock::now();
   dconn
       .Query(
           "CREATE TEMP TABLE B1 AS "
@@ -183,10 +214,20 @@ void T15(int SF, bool isValidation) {
   if (isValidation) {
     finalRes->Print();
   }
+  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
+  arrStart = system_clock::now();
   t15t16UnpinBuffer(B1->getArrayName());
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
+  totalTime =
+      duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
 
   cout << "[TASK15]: END" << endl;
+  cout << "totalTime =" << setw(12) << totalTime << " ns" << endl;
+  cout << "tblTime   =" << setw(12) << tblTime << " ns" << endl;
+  cout << "docTime   =" << setw(12) << docTime << " ns" << endl;
+  cout << "arrTime   =" << setw(12) << arrTime << " ns" << endl;
 }
 
 /**
@@ -208,6 +249,10 @@ void T15(int SF, bool isValidation) {
  *
  */
 void T16(int SF, bool isValidation) {
+  uint64_t totalTime = 0, tblTime = 0, docTime = 0, arrTime = 0;
+  system_clock::time_point tblStart, docStart, arrStart;
+  auto totalStart = system_clock::now();
+
   long ts = 1600182000 + 10800 * 3.5;
   int Z1 = 3 * SF;
   int Z2 = 4 * SF;
@@ -216,6 +261,7 @@ void T16(int SF, bool isValidation) {
   auto &dconn = conn.GetDuckdbConnection();
   auto pvEngine = conn.GetPrevisionEngine();
 
+  arrStart = system_clock::now();
   auto finedust = prevision::OpenArray("finedust");
   auto pm10 = prevision::Project(finedust, {0});
 
@@ -228,8 +274,10 @@ void T16(int SF, bool isValidation) {
   // AVG(pm10) AND GROUP BY latitude, longitude
   auto A = prevision::Avg(ta1, {1, 2});
   pvEngine->Execute(*A);
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   /* B */
+  docStart = system_clock::now();
   string nested =
       "SELECT doc_make('{\"site_id\": ' || "
       "doc_get_int32('site_id', data) || ', \"coordinates\": ' || "
@@ -285,12 +333,19 @@ void T16(int SF, bool isValidation) {
       "doc_get_int32('longitude', data) <= 522 AND "
       "0 <= doc_get_int32('latitude', data) AND "
       "doc_get_int32('latitude', data) <= 522";
+  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
+  arrStart = system_clock::now();
   PFpage *page = t15t16GetBuffer(A->getArrayName());
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   int cnt = 0;
   if (isValidation) {
+    docStart = system_clock::now();
     auto res = dconn.Query(final);
+    docTime +=
+        duration_cast<nanoseconds>(system_clock::now() - docStart).count();
+
     auto resChunk = res->Fetch();
     while (resChunk) {
       auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
@@ -306,6 +361,7 @@ void T16(int SF, bool isValidation) {
         uint64_t idx = latitude * 523 + longitude;
         if (bf_util_is_cell_null(page, idx)) continue;
 
+        // explicit processing
         Builder b2;
         b2.add(arangodb::velocypack::Value(ValueType::Object));
         b2.add("site_id", arangodb::velocypack::Value(site_id));
@@ -314,19 +370,20 @@ void T16(int SF, bool isValidation) {
         b2.add("pm10_avg", arangodb::velocypack::Value(buf[idx]));
         b2.close();
 
-        auto data = HexDump(b2.slice());
-        auto value =
-            duckdb::Value::BLOB((const_data_ptr_t)data.data, data.length);
-
-        cout << "site_id=" << site_id << ", latitude=" << latitude
-             << ", longitude=" << longitude << ", val=" << buf[idx] << endl;
-        ++cnt;
+        auto s = b2.slice();
+        if (s.length() > 0) {
+          ++cnt;
+          cout << "site_id=" << site_id << ", latitude=" << latitude
+               << ", longitude=" << longitude << ", val=" << buf[idx] << endl;
+        }
       }
-
       resChunk = res->Fetch();
     }
   } else {
+    docStart = system_clock::now();
     auto res = dconn.Query(final);
+    docTime +=
+        duration_cast<nanoseconds>(system_clock::now() - docStart).count();
     auto resChunk = res->Fetch();
     while (resChunk) {
       auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
@@ -342,6 +399,7 @@ void T16(int SF, bool isValidation) {
         uint64_t idx = latitude * 523 + longitude;
         if (bf_util_is_cell_null(page, idx)) continue;
 
+        // explicit processing
         Builder b2;
         b2.add(arangodb::velocypack::Value(ValueType::Object));
         b2.add("site_id", arangodb::velocypack::Value(site_id));
@@ -350,18 +408,19 @@ void T16(int SF, bool isValidation) {
         b2.add("pm10_avg", arangodb::velocypack::Value(buf[idx]));
         b2.close();
 
-        auto data = HexDump(b2.slice());
-        auto value =
-            duckdb::Value::BLOB((const_data_ptr_t)data.data, data.length);
-
-        ++cnt;
+        auto s = b2.slice();
+        if (s.length() > 0) {
+          ++cnt;
+        }
       }
 
       resChunk = res->Fetch();
     }
   }
 
+  arrStart = system_clock::now();
   t15t16UnpinBuffer(A->getArrayName());
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
   cout << "cnt=" << cnt << endl;
 
   cout << "[TASK16]: DONE" << endl;

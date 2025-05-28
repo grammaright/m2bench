@@ -1,4 +1,5 @@
 
+#include <chrono>
 #include <string>
 #include <tuple>
 
@@ -11,6 +12,8 @@
 
 using namespace duckdb;
 using namespace prevision;
+using namespace std::chrono;
+using namespace std::chrono::_V2;
 
 void t0_sigmoid(Chunk &opnd, Chunk &result) {
   if (opnd.array_type == TILESTORE_DENSE) {
@@ -62,7 +65,10 @@ void t0_sigmoid(Chunk &opnd, Chunk &result) {
   }
 }
 
-void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize) {
+void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize,
+                  uint64_t &tblTime, uint64_t &arrTime) {
+  auto arrStart = system_clock::now();
+
   /* construct X */
   const char *arrname = "__X";
   int domain[] = {0, personSize - 1, 0, tagSize - 1};
@@ -85,12 +91,19 @@ void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize) {
   BF_GetBuf(key, &page);
   double *xBuf = (double *)bf_util_get_pagebuf(page);
 
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
   // copy data
+  auto tblStart = system_clock::now();
   auto aRes = dconn.Query("SELECT person_id, tag_id FROM TASK_NEW_A_TEMPTABLE");
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
+
   auto aChunk = aRes->Fetch();
   while (aChunk) {
     auto personIdVec = FlatVector::GetData<int>(aChunk->data[0]);
     auto tagIdVec = FlatVector::GetData<int>(aChunk->data[1]);
+
+    arrStart = system_clock::now();
     for (int i = 0; i < aChunk->size(); ++i) {
       if (personIdVec[i] < 0 || personIdVec[i] >= personSize ||
           tagIdVec[i] < 0 || tagIdVec[i] >= tagSize) {
@@ -100,18 +113,24 @@ void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize) {
       uint64_t coord = personIdVec[i] * tagSize + tagIdVec[i];
       xBuf[coord] = 1.f;
     }
+    arrTime +=
+        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
     aChunk = aRes->Fetch();
   }
 
+  arrStart = system_clock::now();
   BF_TouchBuf(key);
   BF_UnpinBuf(key);
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   delete key.arrayname;
 }
 
 void t0ConstructY(duckdb::Connection &dconn, int personSize,
-                  int favoriteBrandId) {
+                  int favoriteBrandId, uint64_t &tblTime, uint64_t &arrTime) {
+  auto arrStart = system_clock::now();
+
   const char *arrname = "__y";
   int domain[] = {0, personSize - 1, 1, 1};
   int tilesize[] = {personSize, 1};
@@ -132,13 +151,20 @@ void t0ConstructY(duckdb::Connection &dconn, int personSize,
   BF_GetBuf(key, &page);
   double *yBuf = (double *)bf_util_get_pagebuf(page);
 
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
   // copy data
+  auto tblStart = system_clock::now();
   auto cRes =
       dconn.Query("SELECT person_id, brand_id FROM TASK_NEW_C_TEMPTABLE");
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
+
   auto cChunk = cRes->Fetch();
   while (cChunk) {
     auto personIdVec = FlatVector::GetData<int>(cChunk->data[0]);
     auto valVec = FlatVector::GetData<int>(cChunk->data[1]);
+
+    arrStart = system_clock::now();
     for (int i = 0; i < cChunk->size(); ++i) {
       if (personIdVec[i] < 0 || personIdVec[i] >= personSize) {
         // the matrix size is fixed even though varying scaling factor
@@ -146,18 +172,23 @@ void t0ConstructY(duckdb::Connection &dconn, int personSize,
       }
       yBuf[personIdVec[i]] = valVec[i] == favoriteBrandId ? 1.f : 0.f;
     }
+    arrTime +=
+        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
     cChunk = cRes->Fetch();
   }
 
+  arrStart = system_clock::now();
   BF_TouchBuf(key);
   BF_UnpinBuf(key);
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   delete key.arrayname;
 }
 
-void t2ConstructX(duckdb::Connection &dconn, int customerSize,
-                  int productSize) {
+void t2ConstructX(duckdb::Connection &dconn, int customerSize, int productSize,
+                  uint64_t &tblTime, uint64_t &arrTime) {
+  auto arrStart = system_clock::now();
   /* construct X */
   const char *arrname = "__X";
   int domain[] = {0, customerSize - 1, 0, productSize - 1};
@@ -179,28 +210,38 @@ void t2ConstructX(duckdb::Connection &dconn, int customerSize,
 
   BF_GetBuf(key, &page);
   double *xBuf = (double *)bf_util_get_pagebuf(page);
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   // copy data
+  auto tblStart = system_clock::now();
   auto aRes = dconn.Query(
       "SELECT customer_id_d as person, product_id_d as product, "
       "rating From Rcustomer, Rproduct, Rating_history Where "
       "Rating_history.customer_id = Rcustomer.customer_id and "
       "Rating_history.product_id = Rproduct.product_id");
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
+
   auto aChunk = aRes->Fetch();
   while (aChunk) {
     auto customerIdVec = FlatVector::GetData<int>(aChunk->data[0]);
     auto productIdVec = FlatVector::GetData<int>(aChunk->data[1]);
     auto ratingVec = FlatVector::GetData<int>(aChunk->data[2]);
+
+    arrStart = system_clock::now();
     for (int i = 0; i < aChunk->size(); ++i) {
       uint64_t coord = customerIdVec[i] * productSize + productIdVec[i];
       xBuf[coord] = (double)ratingVec[i];
     }
+    arrTime +=
+        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
     aChunk = aRes->Fetch();
   }
 
+  arrStart = system_clock::now();
   BF_TouchBuf(key);
   BF_UnpinBuf(key);
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   delete key.arrayname;
 }
