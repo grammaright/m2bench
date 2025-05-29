@@ -1,0 +1,1 @@
+sudo docker load -i m2_latest.tar.gz
