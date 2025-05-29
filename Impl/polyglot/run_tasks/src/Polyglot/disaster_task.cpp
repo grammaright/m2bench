@@ -423,6 +423,9 @@ void T16(int SF, bool isValidation) {
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
   cout << "cnt=" << cnt << endl;
 
+  totalTime =
+      duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
+
   cout << "[TASK16]: DONE" << endl;
   cout << "totalTime =" << setw(12) << totalTime << " ns" << endl;
   cout << "tblTime   =" << setw(12) << tblTime << " ns" << endl;
