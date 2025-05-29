@@ -424,4 +424,8 @@ void T16(int SF, bool isValidation) {
   cout << "cnt=" << cnt << endl;
 
   cout << "[TASK16]: DONE" << endl;
+  cout << "totalTime =" << setw(12) << totalTime << " ns" << endl;
+  cout << "tblTime   =" << setw(12) << tblTime << " ns" << endl;
+  cout << "docTime   =" << setw(12) << docTime << " ns" << endl;
+  cout << "arrTime   =" << setw(12) << arrTime << " ns" << endl;
 }
