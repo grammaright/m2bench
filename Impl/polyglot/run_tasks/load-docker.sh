@@ -1,1 +1,1 @@
-sudo docker load -i m2_latest.tar.gz
+sudo docker load -i polyglot-improved.tar.gz 
