@@ -69,17 +69,15 @@ void T14(int SF, bool isValidation) {
   ChunkProcessing(conn, A, curr, len, start, docTime, arrTime);
 
   docStart = system_clock::now();
-  auto finalRes = dconn.Query(
-      "SELECT '{\"date\": ' || doc_get_int32('date', data) || ', "
-      "\"timestamp\": ' || doc_get_int32('timestamp', data) || ', "
-      "\"site_id\": ' || "
-      "doc_st_closest_object_id_composite_string('Site_centroid', "
-      "'properties.type', "
-      "[(doc_get_int32('longitude', data)::DOUBLE * 0.000216636 - "
-      "118.34501002237936), (doc_get_int32('latitude', data)::DOUBLE * "
-      "0.000172998 + 34.011898718557454)], 'building') || '}' "
-      "FROM D1 "
-      "ORDER BY doc_get_int32('date', data)");
+  auto finalRes = dconn.Query(R"(
+    SELECT data FROM (
+	SELECT doc_make('{"date": ' || doc_get('date', data) || ',"timestamp": ' || doc_get('timestamp', data) || ',"site_id": ' || doc_st_closest_object_id_composite_string('Site_centroid','properties.type',[doc_get('longitude', data)::DOUBLE*0.000216636-118.34501002237936,doc_get('latitude', data)::DOUBLE*0.000172998+34.011898718557454],'building')::INTEGER || '}')::VPACK AS data 
+	FROM (
+		SELECT doc_make('{"date": ' || FLOOR((doc_get('timestamp', data)::INTEGER+5)/8)::INTEGER || ',"timestamp": ' || (doc_get('timestamp', data)::INTEGER+5)::INTEGER || ',"latitude": ' || doc_get('latitude', data) || ',"longitude": ' || doc_get('longitude', data) || ',"pm10_avg": ' || doc_get('pm10_avg', data) ||     '}')::VPACK AS data FROM D1
+	)
+) AS unnamed_12 
+ORDER BY doc_get_int32('date', data)
+    )");
   if (isValidation) {
     finalRes->Print();
   }
@@ -193,24 +191,9 @@ void T15(int SF, bool isValidation) {
           to_string(buf[0]) + "}') AS data")
       ->Print();
 
-  auto startStr =
-      "doc_st_closest_object_composite_string('Site_"
-      "centroid', 'properties.type', [" +
-      to_string(lon) + ", " + to_string(lat) + "], 'roadnode')";
-  auto endStr =
-      "doc_st_closest_object_composite_string('Site_centroid', '"
-      "properties.type', "
-      "[(doc_get_int32('longitude', "
-      "B1.data) * 0.000216636 - 118.34501002237936)::DOUBLE, "
-      "(doc_get_int32('latitude', B1.data) * 0.000172998 + "
-      "34.011898718557454)::DOUBLE], 'roadnode')";
-
-  auto finalRes = dconn.Query("SELECT '{\"start\": ' || " + startStr +
-                              " || ', "
-                              "\"end\": ' || " +
-                              endStr +
-                              " || '}' "
-                              "FROM B1");
+  auto finalRes = dconn.Query(R"(
+    SELECT doc_make('{"start": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[-118.061443,34.068509],'roadnode')::VARCHAR || ',"end": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[(doc_get('longitude', data)::INTEGER*0.000216636-118.34501002237936)::DOUBLE,(doc_get('latitude', data)::INTEGER*0.000172998+34.011898718557454)::DOUBLE],'roadnode')::VARCHAR || '}')::VPACK AS data FROM B1
+    )");
   if (isValidation) {
     finalRes->Print();
   }
@@ -278,61 +261,13 @@ void T16(int SF, bool isValidation) {
 
   /* B */
   docStart = system_clock::now();
-  string nested =
-      "SELECT doc_make('{\"site_id\": ' || "
-      "doc_get_int32('site_id', data) || ', \"coordinates\": ' || "
-      "doc_make_json(doc_get_array('geometry.coordinates', data)) || "
-      "'}') AS data "
-      "FROM Site "
-      "WHERE doc_get_string('properties.type', data) = 'building' "
-      "AND "
-      "doc_get_string('properties.description', data) = "
-      "'school'";
-
-  // manual unnesting three times
-  string unnested =
-      "SELECT doc_insert(data, unnest(doc_get_list('coordinates', "
-      "data, 1)::VPack[])::VPack, 'coordinates')::VPack AS data FROM "
-      "(" +
-      nested + ") ";
-  unnested =
-      "SELECT doc_insert(data, unnest(doc_get_list('coordinates', "
-      "data, 1)::VPack[])::VPack, 'coordinates')::VPack AS data FROM "
-      "(" +
-      unnested + ") ";
-  unnested =
-      "SELECT doc_insert(data, unnest(doc_get_list('coordinates', "
-      "data, 1)::VPack[])::VPack, 'coordinates')::VPack AS data FROM "
-      "(" +
-      unnested + ") ";
-
-  string refined =
-      "SELECT doc_make('{\"site_id\": ' || "
-      "doc_get_int32('site_id', data) || "
-      "', \"longitude\": ' || "
-      "FLOOR((((SUM(doc_get_list_double('coordinates', "
-      "data)[1]::FLOAT) / "
-      "COUNT(*)) + 118.3450100223) / 0.000216636))::INTEGER || "
-      "', \"latitude\": ' || "
-      "FLOOR((((SUM(doc_get_list_double('coordinates', "
-      "data)[2]::FLOAT) / COUNT(*)) - 34.01189870) / "
-      "0.000172998))::INTEGER || "
-      "'}') AS data "
-      "FROM (" +
-      unnested +
-      ") "
-      "GROUP BY doc_get_int32('site_id', data)";
-  string final =
-      "SELECT doc_get_int32('site_id', data), "
-      "doc_get_int32('longitude', data), "
-      "doc_get_int32('latitude', data) "
-      " FROM (" +
-      refined +
-      ") "
-      "WHERE 0 <= doc_get_int32('longitude', data) AND "
-      "doc_get_int32('longitude', data) <= 522 AND "
-      "0 <= doc_get_int32('latitude', data) AND "
-      "doc_get_int32('latitude', data) <= 522";
+  string final = R"(
+    SELECT doc_get_int32('site_id', data), 
+      doc_get_int32('longitude', data), 
+      doc_get_int32('latitude', data) 
+    FROM
+    (SELECT doc_make('{"site_id": ' || doc_get('site_id', data) || ',"longitude": ' || FLOOR((((SUM((doc_get('coordinates', data)::FLOAT[])[1]))/COUNT(*))+118.3450100223)/0.000216636)::INTEGER || ',"latitude": ' || FLOOR((((SUM((doc_get('coordinates', data)::FLOAT[])[2]))/COUNT(*))-34.01189870)/0.000172998)::INTEGER || '}')::VPACK AS data FROM (SELECT doc_insert(data, unnest(doc_get_list('coordinates', data, 3)::VPack[])::VPack, 'coordinates')::VPack AS data FROM (SELECT doc_make('{"site_id": ' || doc_get('site_id', data) || ',"coordinates": ' || doc_get('geometry.coordinates', data) || '}')::VPACK AS data FROM (SELECT * FROM Site WHERE doc_get_string('properties.type', Site.data) = 'building' AND doc_get_string('properties.description', Site.data) = 'school') AS unnamed_3) AS unnamed_4) AS unnamed_5 GROUP BY doc_get('site_id', data)) AS unnamed_6 WHERE 0 <= doc_get_int32('longitude', data) AND doc_get_int32('longitude', data) <= 522 AND 0 <= doc_get_int32('latitude', data) AND doc_get_int32('latitude', data) <= 522
+  )";
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
   arrStart = system_clock::now();

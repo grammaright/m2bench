@@ -120,11 +120,8 @@ void ChunkProcessing(PolyglotConnection &conn,
           "\"latitude\": " +
           to_string(lat[0]) +
           ", "
-          "\"date\": " +
-          to_string(((int)ts[0] + farStart + start) / 8) +
-          ", "
           "\"timestamp\": " +
-          to_string(ts[0] + farStart + start) +
+          to_string(ts[0] + start) +
           ", "
           "\"pm10_avg\": " +
           to_string(buf[0]) + "}'))")

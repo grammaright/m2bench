@@ -42,15 +42,10 @@ void T9(int SF, bool isValidation) {
 
   // it gives polyglot advantage
   docStart = system_clock::now();
-  auto res = dconn.Query(
-      "SELECT doc_get_int32('drug_id', data), "
-      "doc_get_string('adverse_effect_list.adverse_effect_name', data) "
-      "FROM ( "
-      "SELECT doc_insert(data, unnest(doc_get_list('adverse_effect_list', "
-      "data, 1)::VPack[])::VPack, 'adverse_effect_list')::VPack AS data FROM "
-      "Drug) "
-      "GROUP BY doc_get_int32('drug_id', data), "
-      "doc_get_string('adverse_effect_list.adverse_effect_name', data)");
+  auto res = dconn.Query(R"(
+    SELECT doc_get_int32('drug_id', data) AS drug_id, doc_get_string('adverse_effect', data) AS adverse_effect_name FROM (
+       SELECT doc_make('{"adverse_effect": ' || doc_get('adverse_effect_list.adverse_effect_name', data) || ',"drug_id": ' || doc_get('drug_id', data) || '}')::VPACK AS data FROM (SELECT doc_insert(data, unnest(doc_get_list('adverse_effect_list', data, 1)::VPack[])::VPack, 'adverse_effect_list')::VPack AS data FROM Drug) AS unnamed_2 GROUP BY doc_get('adverse_effect_list.adverse_effect_name', data), doc_get('drug_id', data))
+    )");
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
   tblStart = system_clock::now();
@@ -134,7 +129,8 @@ void T9(int SF, bool isValidation) {
     auto fRes = dconn.Query(
         "SELECT DISTINCT Rdrug.drug_d, Rdrug.drug "
         "FROM Prescription, Rdrug "
-        "WHERE Rdrug.drug = Prescription.drug_id AND Prescription.patient_id "
+        "WHERE Rdrug.drug = Prescription.drug_id AND "
+        "Prescription.patient_id "
         "= " +
         to_string(patientId) + " ORDER BY Rdrug.drug");
     tblTime +=
@@ -180,7 +176,8 @@ void T9(int SF, bool isValidation) {
     auto fRes = dconn.Query(
         "SELECT DISTINCT Rdrug.drug_d, Rdrug.drug "
         "FROM Prescription, Rdrug "
-        "WHERE Rdrug.drug = Prescription.drug_id AND Prescription.patient_id "
+        "WHERE Rdrug.drug = Prescription.drug_id AND "
+        "Prescription.patient_id "
         "= " +
         to_string(patientId));
     tblTime +=
