@@ -46,6 +46,7 @@ add_executable(m2bench
     src/Polyglot/healthcare_task.cpp
     src/Polyglot/disaster_func.cpp
     src/Polyglot/disaster_task.cpp
+    src/Polyglot/general_func.cpp
 
     src/Connection/Connection.cpp
     src/json_udf.cpp

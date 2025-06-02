@@ -77,19 +77,16 @@ void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize,
   storage_util_delete_array(arrname);
   storage_util_create_array(arrname, TILESTORE_DENSE, domain, tilesize, 2, 1,
                             fm, TILESTORE_NOT_NULLABLE);
-  // assume that there is only one tile
-  uint64_t dcoords[] = {0, 0};
 
-  PFpage *page;
+  // TODO: multiple tiles
+  // assume that there is only one tile
+  PFpage *page = NULL;
+  uint64_t lastTileCoords[2];
   array_key key;
   key.arrayname = new char[4];
   memcpy(key.arrayname, arrname, 4);
-  key.dcoords = dcoords;
   key.dim_len = 2;
   key.emptytile_template = BF_EMPTYTILE_DENSE;
-
-  BF_GetBuf(key, &page);
-  double *xBuf = (double *)bf_util_get_pagebuf(page);
 
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
@@ -103,26 +100,43 @@ void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize,
     auto personIdVec = FlatVector::GetData<int>(aChunk->data[0]);
     auto tagIdVec = FlatVector::GetData<int>(aChunk->data[1]);
 
-    arrStart = system_clock::now();
     for (int i = 0; i < aChunk->size(); ++i) {
       if (personIdVec[i] < 0 || personIdVec[i] >= personSize ||
           tagIdVec[i] < 0 || tagIdVec[i] >= tagSize) {
         // the matrix size is fixed even though varying scaling factor
         continue;
       }
-      uint64_t coord = personIdVec[i] * tagSize + tagIdVec[i];
+
+      // compute tile coordinates and cell coordinates
+      uint64_t tileCoords[2] = {(uint64_t)personIdVec[i] / tilesize[0],
+                                (uint64_t)tagIdVec[i] / tilesize[1]};
+      uint64_t cellCoords[2] = {(uint64_t)personIdVec[i] % tilesize[0],
+                                (uint64_t)tagIdVec[i] % tilesize[1]};
+
+      // caching GetBuf() for better performance
+      if (page == NULL || !(tileCoords[0] != lastTileCoords[0] &&
+                            tileCoords[1] != lastTileCoords[1])) {
+        if (page != NULL) {
+          BF_TouchBuf(key);
+          BF_UnpinBuf(key);
+        }
+
+        key.dcoords = tileCoords;
+        BF_GetBuf(key, &page);
+      }
+
+      double *xBuf = (double *)bf_util_get_pagebuf(page);
+      uint64_t coord = cellCoords[0] * tagSize + cellCoords[1];
       xBuf[coord] = 1.f;
     }
-    arrTime +=
-        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
     aChunk = aRes->Fetch();
   }
 
-  arrStart = system_clock::now();
-  BF_TouchBuf(key);
-  BF_UnpinBuf(key);
-  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+  if (page != NULL) {
+    BF_TouchBuf(key);
+    BF_UnpinBuf(key);
+  }
 
   delete key.arrayname;
 }
@@ -139,17 +153,15 @@ void t0ConstructY(duckdb::Connection &dconn, int personSize,
   storage_util_create_array(arrname, TILESTORE_DENSE, domain, tilesize, 2, 1,
                             fm, TILESTORE_NOT_NULLABLE);
 
-  uint64_t dcoords[] = {0, 0};
-  PFpage *page;
+  // TODO: multiple tiles
+  // assume that there is only one tile
+  PFpage *page = NULL;
+  uint64_t lastTileCoords[2];
   array_key key;
   key.arrayname = new char[4];
   memcpy(key.arrayname, arrname, 4);
-  key.dcoords = dcoords;
   key.dim_len = 2;
   key.emptytile_template = BF_EMPTYTILE_DENSE;
-
-  BF_GetBuf(key, &page);
-  double *yBuf = (double *)bf_util_get_pagebuf(page);
 
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
@@ -164,24 +176,39 @@ void t0ConstructY(duckdb::Connection &dconn, int personSize,
     auto personIdVec = FlatVector::GetData<int>(cChunk->data[0]);
     auto valVec = FlatVector::GetData<int>(cChunk->data[1]);
 
-    arrStart = system_clock::now();
     for (int i = 0; i < cChunk->size(); ++i) {
       if (personIdVec[i] < 0 || personIdVec[i] >= personSize) {
         // the matrix size is fixed even though varying scaling factor
         continue;
       }
-      yBuf[personIdVec[i]] = valVec[i] == favoriteBrandId ? 1.f : 0.f;
+
+      // compute tile coordinates and cell coordinates
+      uint64_t tileCoords[2] = {(uint64_t)personIdVec[i] / tilesize[0], 0};
+      uint64_t cellCoords[2] = {(uint64_t)personIdVec[i] % tilesize[0], 0};
+
+      // caching GetBuf() for better performance
+      if (page == NULL || !(tileCoords[0] != lastTileCoords[0] &&
+                            tileCoords[1] != lastTileCoords[1])) {
+        if (page != NULL) {
+          BF_TouchBuf(key);
+          BF_UnpinBuf(key);
+        }
+
+        key.dcoords = tileCoords;
+        BF_GetBuf(key, &page);
+      }
+
+      double *yBuf = (double *)bf_util_get_pagebuf(page);
+      yBuf[cellCoords[0]] = valVec[i] == favoriteBrandId ? 1.f : 0.f;
     }
-    arrTime +=
-        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
     cChunk = cRes->Fetch();
   }
 
-  arrStart = system_clock::now();
-  BF_TouchBuf(key);
-  BF_UnpinBuf(key);
-  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+  if (page != NULL) {
+    BF_TouchBuf(key);
+    BF_UnpinBuf(key);
+  }
 
   delete key.arrayname;
 }
@@ -197,19 +224,17 @@ void t2ConstructX(duckdb::Connection &dconn, int customerSize, int productSize,
   storage_util_delete_array(arrname);
   storage_util_create_array(arrname, TILESTORE_DENSE, domain, tilesize, 2, 1,
                             fm, TILESTORE_NOT_NULLABLE);
-  // assume that there is only one tile
-  uint64_t dcoords[] = {0, 0};
 
-  PFpage *page;
+  // TODO: multiple tiles
+  // assume that there is only one tile
+  PFpage *page = NULL;
+  uint64_t lastTileCoords[2];
   array_key key;
   key.arrayname = new char[4];
   memcpy(key.arrayname, arrname, 4);
-  key.dcoords = dcoords;
   key.dim_len = 2;
   key.emptytile_template = BF_EMPTYTILE_DENSE;
 
-  BF_GetBuf(key, &page);
-  double *xBuf = (double *)bf_util_get_pagebuf(page);
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   // copy data
@@ -227,21 +252,37 @@ void t2ConstructX(duckdb::Connection &dconn, int customerSize, int productSize,
     auto productIdVec = FlatVector::GetData<int>(aChunk->data[1]);
     auto ratingVec = FlatVector::GetData<int>(aChunk->data[2]);
 
-    arrStart = system_clock::now();
     for (int i = 0; i < aChunk->size(); ++i) {
-      uint64_t coord = customerIdVec[i] * productSize + productIdVec[i];
+      // compute tile coordinates and cell coordinates
+      uint64_t tileCoords[2] = {(uint64_t)customerIdVec[i] / tilesize[0],
+                                (uint64_t)productIdVec[i] / tilesize[1]};
+      uint64_t cellCoords[2] = {(uint64_t)customerIdVec[i] % tilesize[0],
+                                (uint64_t)productIdVec[i] % tilesize[1]};
+
+      // caching GetBuf() for better performance
+      if (page == NULL || !(tileCoords[0] != lastTileCoords[0] &&
+                            tileCoords[1] != lastTileCoords[1])) {
+        if (page != NULL) {
+          BF_TouchBuf(key);
+          BF_UnpinBuf(key);
+        }
+
+        key.dcoords = tileCoords;
+        BF_GetBuf(key, &page);
+      }
+
+      double *xBuf = (double *)bf_util_get_pagebuf(page);
+      uint64_t coord = cellCoords[0] * productSize + cellCoords[1];
       xBuf[coord] = (double)ratingVec[i];
     }
-    arrTime +=
-        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
     aChunk = aRes->Fetch();
   }
 
-  arrStart = system_clock::now();
-  BF_TouchBuf(key);
-  BF_UnpinBuf(key);
-  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+  if (page != NULL) {
+    BF_TouchBuf(key);
+    BF_UnpinBuf(key);
+  }
 
   delete key.arrayname;
 }

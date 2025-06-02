@@ -136,11 +136,6 @@ void T9(int SF, bool isValidation) {
     tblTime +=
         duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
-    arrStart = system_clock::now();
-    auto page = t9GetBuffer(E->getArrayName());
-    arrTime +=
-        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
-
     auto fResChunk = fRes->Fetch();
     size_t resCnt = 0;
     while (fResChunk) {
@@ -149,27 +144,33 @@ void T9(int SF, bool isValidation) {
       for (int i = 0; i < fResChunk->size(); ++i) {
         auto id = drugVec[i];
         auto oid = originalDrugIdVec[i];
-        auto val = t9GetValues(dconn, page, id);
-        resCnt += val.size();  // not to be eliminated
-        for (auto &item : val) {
-          auto a = dconn.Query("SELECT drug FROM Rdrug WHERE drug_d = " +
-                               to_string(item.first));
 
-          auto ar = a->Fetch();
-          auto av = FlatVector::GetData<int>(ar->data[0]);
-          cout << oid << "," << item.first << "," << av[0] << "," << item.second
-               << endl;
+        uint64_t colTileSize = drugSize;
+        uint64_t colNumTiles = (drugSize + drugSize - 1) / colTileSize;
+        for (uint64_t colTileIdx = 0; colTileIdx < colNumTiles; colTileIdx++) {
+          std::vector<uint64_t> dcoords = {0, colTileIdx};
+          auto page =
+              pvGetBuffer(E->getArrayName(), dcoords, BF_EMPTYTILE_NONE);
+
+          auto val = t9GetValues(dconn, page, id);
+          resCnt += val.size();  // not to be eliminated
+          for (auto &item : val) {
+            auto a = dconn.Query("SELECT drug FROM Rdrug WHERE drug_d = " +
+                                 to_string(item.first));
+
+            auto ar = a->Fetch();
+            auto av = FlatVector::GetData<int>(ar->data[0]);
+            cout << oid << "," << item.first << "," << av[0] << ","
+                 << item.second << endl;
+          }
+
+          pvUnpinBuffer(E->getArrayName(), dcoords);
         }
       }
 
       fResChunk = fRes->Fetch();
     }
     cout << "resCnt: " << resCnt << endl;
-
-    arrStart = system_clock::now();
-    t9UnpinBuffer(E->getArrayName());
-    arrTime +=
-        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   } else {
     tblStart = system_clock::now();
@@ -183,11 +184,6 @@ void T9(int SF, bool isValidation) {
     tblTime +=
         duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
-    arrStart = system_clock::now();
-    auto page = t9GetBuffer(E->getArrayName());
-    arrTime +=
-        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
-
     auto fResChunk = fRes->Fetch();
     size_t resCnt = 0;
     while (fResChunk) {
@@ -196,18 +192,28 @@ void T9(int SF, bool isValidation) {
       for (int i = 0; i < fResChunk->size(); ++i) {
         auto id = drugVec[i];
         auto oid = originalDrugIdVec[i];
-        auto val = t9GetValues(dconn, page, id);
-        resCnt += val.size();  // not to be eliminated
+
+        uint64_t colTileSize = drugSize;
+        uint64_t colNumTiles = (drugSize + drugSize - 1) / colTileSize;
+        for (uint64_t colTileIdx = 0; colTileIdx < colNumTiles; colTileIdx++) {
+          std::vector<uint64_t> dcoords = {0, colTileIdx};
+          auto page =
+              pvGetBuffer(E->getArrayName(), dcoords, BF_EMPTYTILE_NONE);
+          if (page == NULL) {
+            pvUnpinBuffer(E->getArrayName(), dcoords);
+            continue;
+          }
+
+          auto val = t9GetValues(dconn, page, id);
+          resCnt += val.size();  // not to be eliminated
+
+          pvUnpinBuffer(E->getArrayName(), dcoords);
+        }
       }
 
       fResChunk = fRes->Fetch();
     }
     cout << "resCnt: " << resCnt << endl;
-
-    arrStart = system_clock::now();
-    t9UnpinBuffer(E->getArrayName());
-    arrTime +=
-        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
   }
 
   totalTime =

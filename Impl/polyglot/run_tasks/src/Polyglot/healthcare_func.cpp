@@ -98,18 +98,16 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
   storage_util_delete_array(arrname);
   storage_util_create_array(arrname, TILESTORE_SPARSE_CSR, domain, tilesize, 2,
                             1, fm, TILESTORE_NOT_NULLABLE);
-  // assume that there is only one tile
-  uint64_t dcoords[] = {0, 0};
 
-  PFpage *page;
+  // TODO: multiple tiles
+  // assume that there is only one tile
+  PFpage *page = NULL;
+  uint64_t lastTileCoords[2];
   array_key key;
   key.arrayname = new char[4];
   memcpy(key.arrayname, arrname, 4);
-  key.dcoords = dcoords;
   key.dim_len = 2;
   key.emptytile_template = BF_EMPTYTILE_SPARSE_CSR;
-
-  BF_GetBuf(key, &page);
 
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
@@ -123,83 +121,83 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
       "ORDER BY drug_d ASC, adverse_effect_d ASC");
   tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
-  //  set CSR page
-  arrStart = system_clock::now();
-  int rowCount = aRes->RowCount();
-  BF_ResizeBuf(page, rowCount);
-
-  double *xBuf = (double *)bf_util_get_pagebuf(page);
-  uint64_t *indptr = (uint64_t *)bf_util_pagebuf_get_coords(page, 0);
-  uint64_t *indices = (uint64_t *)bf_util_pagebuf_get_coords(page, 1);
-  int idx = 0;
-  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
-
   auto aChunk = aRes->Fetch();
   while (aChunk) {
     auto drugVec = FlatVector::GetData<int>(aChunk->data[0]);
     auto aeVec = FlatVector::GetData<int>(aChunk->data[1]);
 
-    arrStart = system_clock::now();
     for (int i = 0; i < aChunk->size(); ++i) {
-      int row = drugVec[i];
-      int col = aeVec[i];
+      // compute tile coordinates and cell coordinates
+      uint64_t tileCoords[2] = {(uint64_t)drugVec[i] / tilesize[0],
+                                (uint64_t)aeVec[i] / tilesize[1]};
+      int cellCoords[2] = {drugVec[i] % (int)tilesize[0],
+                           aeVec[i] % (int)tilesize[1]};
+
+      // caching GetBuf() for better performance
+      if (page == NULL || !(tileCoords[0] != lastTileCoords[0] &&
+                            tileCoords[1] != lastTileCoords[1])) {
+        if (page != NULL) {
+          BF_TouchBuf(key);
+          BF_UnpinBuf(key);
+        }
+
+        key.dcoords = tileCoords;
+        BF_GetBuf(key, &page);
+      }
+
+      // resize if small page
+      uint64_t idx = bf_util_pagebuf_get_unfilled_idx(page);
+      if (page->max_idx == idx) {
+        BF_ResizeBuf(page, idx * 2);
+      }
+
+      double *xBuf = (double *)bf_util_get_pagebuf(page);
+      uint64_t *indptr = (uint64_t *)bf_util_pagebuf_get_coords(page, 0);
+      uint64_t *indices = (uint64_t *)bf_util_pagebuf_get_coords(page, 1);
+
+      int row = cellCoords[0];
+      int col = cellCoords[1];
 
       indptr[row + 1]++;
       indices[idx] = col;
       xBuf[idx] = 1.f;
       ++idx;
+
+      bf_util_pagebuf_set_unfilled_idx(page, idx);
+      bf_util_pagebuf_set_unfilled_pagebuf_offset(page, idx * sizeof(double));
     }
-    arrTime +=
-        duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
     aChunk = aRes->Fetch();
   }
 
-  // finish touch for idxptr
-  arrStart = system_clock::now();
-  for (int i = 1; i < drugSize + 1; i++) {
-    indptr[i] += indptr[i - 1];
+  if (page != NULL) {
+    BF_TouchBuf(key);
+    BF_UnpinBuf(key);
   }
 
-  bf_util_pagebuf_set_unfilled_idx(page, rowCount);
-  bf_util_pagebuf_set_unfilled_pagebuf_offset(page, rowCount * sizeof(double));
+  // finish touch for idxptr
+  uint64_t totalNumTiles =
+      ((drugSize + tilesize[0] - 1) / tilesize[0]) *
+      ((adverseEffectSize + tilesize[1] - 1) / tilesize[1]);
+  // iterate over tiles
+  for (uint64_t idx = 0; idx < totalNumTiles; idx++) {
+    uint64_t tileCoords[2] = {idx / tilesize[1], idx % tilesize[1]};
+    key.dcoords = tileCoords;
+    key.emptytile_template = BF_EMPTYTILE_NONE;
+    BF_GetBuf(key, &page);
+    if (page == NULL) {
+      BF_UnpinBuf(key);
+      continue;
+    }
 
-  BF_TouchBuf(key);
-  BF_UnpinBuf(key);
-  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+    uint64_t *indptr = (uint64_t *)bf_util_pagebuf_get_coords(page, 0);
+    for (int i = 1; i < drugSize + 1; i++) {
+      indptr[i] += indptr[i - 1];
+    }
 
-  delete key.arrayname;
-}
-
-PFpage *t9GetBuffer(string arrName) {
-  // assume that there is only one tile
-  uint64_t dcoords[] = {0, 0};
-
-  PFpage *page;
-  array_key key;
-  key.arrayname = new char[arrName.size()];
-  memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
-  key.dcoords = dcoords;
-  key.dim_len = 2;
-  key.emptytile_template = BF_EMPTYTILE_SPARSE_CSR;
-
-  BF_GetBuf(key, &page);
-
-  delete key.arrayname;
-
-  return page;
-}
-
-void t9UnpinBuffer(string arrName) {
-  uint64_t dcoords[] = {0, 0};
-
-  array_key key;
-  key.arrayname = new char[arrName.size()];
-  memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
-  key.dcoords = dcoords;
-  key.dim_len = 2;
-  key.emptytile_template = BF_EMPTYTILE_SPARSE_CSR;
-  BF_UnpinBuf(key);
+    BF_TouchBuf(key);
+    BF_UnpinBuf(key);
+  }
 
   delete key.arrayname;
 }

@@ -169,13 +169,14 @@ void T15(int SF, bool isValidation) {
   auto B1 = Topk(A, prevision::TopkType::MAX, 1);
   pvEngine->Execute(*B1);
 
-  PFpage *page = t15t16GetBuffer(B1->getArrayName());
+  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
+  std::vector<uint64_t> dcoords = {0, 0};
+  PFpage *page = pvGetBuffer(B1->getArrayName(), dcoords, BF_EMPTYTILE_NONE);
 
   uint64_t *latBuf = bf_util_pagebuf_get_coords(page, 0);
   uint64_t *lonBuf = bf_util_pagebuf_get_coords(page, 1);
   double *buf = (double *)bf_util_get_pagebuf(page);
-
-  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   docStart = system_clock::now();
   dconn
@@ -191,17 +192,20 @@ void T15(int SF, bool isValidation) {
           to_string(buf[0]) + "}') AS data")
       ->Print();
 
-  auto finalRes = dconn.Query(R"(
+  if (isValidation) {
+    dconn
+        .Query(R"(
+    SELECT '{"start": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[-118.061443,34.068509],'roadnode')::VARCHAR || ',"end": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[(doc_get('longitude', data)::INTEGER*0.000216636-118.34501002237936)::DOUBLE,(doc_get('latitude', data)::INTEGER*0.000172998+34.011898718557454)::DOUBLE],'roadnode')::VARCHAR || '}' FROM B1
+    )")
+        ->Print();
+  } else {
+    dconn.Query(R"(
     SELECT doc_make('{"start": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[-118.061443,34.068509],'roadnode')::VARCHAR || ',"end": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[(doc_get('longitude', data)::INTEGER*0.000216636-118.34501002237936)::DOUBLE,(doc_get('latitude', data)::INTEGER*0.000172998+34.011898718557454)::DOUBLE],'roadnode')::VARCHAR || '}')::VPACK AS data FROM B1
     )");
-  if (isValidation) {
-    finalRes->Print();
   }
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
-  arrStart = system_clock::now();
-  t15t16UnpinBuffer(B1->getArrayName());
-  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+  pvUnpinBuffer(B1->getArrayName(), dcoords);
 
   totalTime =
       duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
@@ -270,9 +274,8 @@ void T16(int SF, bool isValidation) {
   )";
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
-  arrStart = system_clock::now();
-  PFpage *page = t15t16GetBuffer(A->getArrayName());
-  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+  std::vector<uint64_t> dcoords = {0, 0};
+  PFpage *page = NULL;
 
   int cnt = 0;
   if (isValidation) {
@@ -286,14 +289,29 @@ void T16(int SF, bool isValidation) {
       auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
       auto longitudeVec = FlatVector::GetData<int>(resChunk->data[1]);
       auto latitudeVec = FlatVector::GetData<int>(resChunk->data[2]);
-      double *buf = (double *)bf_util_get_pagebuf(page);
 
       for (int i = 0; i < resChunk->size(); ++i) {
         int site_id = siteIdVec[i];
         int longitude = longitudeVec[i];
         int latitude = latitudeVec[i];
 
-        uint64_t idx = latitude * 523 + longitude;
+        uint64_t tileCoords[2] = {(uint64_t)latitude / _tilesize[1],
+                                  (uint64_t)longitude / _tilesize[2]};
+        uint64_t cellCoords[2] = {(uint64_t)latitude % _tilesize[1],
+                                  (uint64_t)longitude % _tilesize[2]};
+
+        if (page == NULL ||
+            !(dcoords[0] == tileCoords[0] && dcoords[1] == tileCoords[1])) {
+          if (page != NULL) {
+            pvUnpinBuffer(A->getArrayName(), dcoords);
+          }
+          dcoords[0] = tileCoords[0];
+          dcoords[1] = tileCoords[1];
+          page = pvGetBuffer(A->getArrayName(), dcoords, BF_EMPTYTILE_NONE);
+        }
+
+        double *buf = (double *)bf_util_get_pagebuf(page);
+        uint64_t idx = cellCoords[0] * 523 + cellCoords[1];
         if (bf_util_is_cell_null(page, idx)) continue;
 
         // explicit processing
@@ -331,7 +349,23 @@ void T16(int SF, bool isValidation) {
         int longitude = longitudeVec[i];
         int latitude = latitudeVec[i];
 
-        uint64_t idx = latitude * 523 + longitude;
+        uint64_t tileCoords[2] = {(uint64_t)longitude / _tilesize[1],
+                                  (uint64_t)latitude / _tilesize[2]};
+        uint64_t cellCoords[2] = {(uint64_t)longitude % _tilesize[1],
+                                  (uint64_t)latitude % _tilesize[2]};
+
+        if (page == NULL ||
+            !(dcoords[0] == tileCoords[0] && dcoords[1] == tileCoords[1])) {
+          if (page != NULL) {
+            pvUnpinBuffer(A->getArrayName(), dcoords);
+          }
+          dcoords[0] = tileCoords[0];
+          dcoords[1] = tileCoords[1];
+          page = pvGetBuffer(A->getArrayName(), dcoords, BF_EMPTYTILE_NONE);
+        }
+
+        double *buf = (double *)bf_util_get_pagebuf(page);
+        uint64_t idx = cellCoords[0] * 523 + cellCoords[1];
         if (bf_util_is_cell_null(page, idx)) continue;
 
         // explicit processing
@@ -353,9 +387,9 @@ void T16(int SF, bool isValidation) {
     }
   }
 
-  arrStart = system_clock::now();
-  t15t16UnpinBuffer(A->getArrayName());
-  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+  if (page != NULL) {
+    pvUnpinBuffer(A->getArrayName(), dcoords);
+  }
   cout << "cnt=" << cnt << endl;
 
   totalTime =
