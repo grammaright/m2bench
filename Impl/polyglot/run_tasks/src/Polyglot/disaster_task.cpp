@@ -337,12 +337,12 @@ void T16(int SF, bool isValidation) {
     auto res = dconn.Query(final);
     docTime +=
         duration_cast<nanoseconds>(system_clock::now() - docStart).count();
+
     auto resChunk = res->Fetch();
     while (resChunk) {
       auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
       auto longitudeVec = FlatVector::GetData<int>(resChunk->data[1]);
       auto latitudeVec = FlatVector::GetData<int>(resChunk->data[2]);
-      double *buf = (double *)bf_util_get_pagebuf(page);
 
       for (int i = 0; i < resChunk->size(); ++i) {
         int site_id = siteIdVec[i];
