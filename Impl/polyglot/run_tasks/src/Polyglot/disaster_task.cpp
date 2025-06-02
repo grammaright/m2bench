@@ -349,10 +349,10 @@ void T16(int SF, bool isValidation) {
         int longitude = longitudeVec[i];
         int latitude = latitudeVec[i];
 
-        uint64_t tileCoords[2] = {(uint64_t)longitude / _tilesize[1],
-                                  (uint64_t)latitude / _tilesize[2]};
-        uint64_t cellCoords[2] = {(uint64_t)longitude % _tilesize[1],
-                                  (uint64_t)latitude % _tilesize[2]};
+        uint64_t tileCoords[2] = {(uint64_t)latitude / _tilesize[1],
+                                  (uint64_t)longitude / _tilesize[2]};
+        uint64_t cellCoords[2] = {(uint64_t)latitude % _tilesize[1],
+                                  (uint64_t)longitude % _tilesize[2]};
 
         if (page == NULL ||
             !(dcoords[0] == tileCoords[0] && dcoords[1] == tileCoords[1])) {
