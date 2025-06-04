@@ -40,20 +40,30 @@ void T9(int SF, bool isValidation) {
   PolyglotConnection conn(true, "healthcare", true);
   auto &dconn = conn.GetDuckdbConnection();
 
-  // it gives polyglot advantage
-  docStart = system_clock::now();
-  auto res = dconn.Query(R"(
-    SELECT doc_get_int32('drug_id', data) AS drug_id, doc_get_string('adverse_effect', data) AS adverse_effect_name FROM (
-       SELECT doc_make('{"adverse_effect": ' || doc_get('adverse_effect_list.adverse_effect_name', data) || ',"drug_id": ' || doc_get('drug_id', data) || '}')::VPACK AS data FROM (SELECT doc_insert(data, unnest(doc_get_list('adverse_effect_list', data, 1)::VPack[])::VPack, 'adverse_effect_list')::VPack AS data FROM Drug) AS unnamed_2 GROUP BY doc_get('adverse_effect_list.adverse_effect_name', data), doc_get('drug_id', data))
-    )");
-  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
-
   tblStart = system_clock::now();
   dconn.Query(
       "create temporary table D2A ( "
       " drug int, "
       " adverse_effect varchar(100) )");
   tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
+
+  docStart = system_clock::now();
+  dconn
+      .Query(R"(
+    CREATE TEMP TABLE DOC_INTERM AS
+    SELECT doc_make('{"adverse_effect": ' || doc_get('adverse_effect_list.adverse_effect_name', data) || ',"drug_id": ' || doc_get('drug_id', data) || '}')::VPACK AS data 
+    FROM (
+      SELECT doc_insert(data, unnest(doc_get_list('adverse_effect_list', data, 1)::VPack[])::VPack, 'adverse_effect_list')::VPack AS data FROM Drug
+    ) AS unnamed_2 
+    GROUP BY doc_get('adverse_effect_list.adverse_effect_name', data), doc_get('drug_id', data)
+    )")
+      ->Print();
+
+  auto res = dconn.Query(R"(
+    SELECT doc_get_int32('drug_id', data) AS drug_id, doc_get_string('adverse_effect', data) AS adverse_effect_name 
+    FROM DOC_INTERM
+  )");
+  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
   // Conversion cost
   Appender d2aAppender(dconn, "D2A");

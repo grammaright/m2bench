@@ -54,15 +54,6 @@ void T0(int SF, bool isValidation) {
   // B
   // Get pairs of customer_id and product_id that the customer gives the
   // highest rating score.
-  docStart = system_clock::now();
-  auto res = dconn.Query(
-      R"(
-        SELECT doc_get_string('customer_id', data) AS customer_id, doc_get_string('product_id', data) AS product_id 
-        FROM (
-            SELECT doc_make('{"total_price": ' || doc_get('total_price', order_.data) || ',"order_line": ' || doc_get('order_line', order_.data) || ',"order_.order_id": ' || doc_get('order_.order_id', order_.data) || ',"B1.order_id": ' || doc_get('B1.order_id', B1.data) || ',"customer_id": ' ||     doc_get('customer_id', order_.data) || ',"product_id": ' || doc_get('product_id', B1.data) || ',"rating": ' || doc_get('rating', B1.data) || ',"order_date": ' || doc_get('order_date', order_.data) || ',"feedback": ' || doc_get('feedback', B1.data) || '}')::VPack AS data FROM (SELECT * FROM review WHERE doc_get_int32('rating', review.data) = 5) AS B1 JOIN order_ ON doc_get_string('order_id', B1.data) = doc_get_string('order_id', order_.data)
-        ))");
-  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
-
   tblStart = system_clock::now();
   dconn.Query(
       "CREATE TEMPORARY TABLE TASK_NEW_B2_TEMPTABLE_2 ("
@@ -70,6 +61,18 @@ void T0(int SF, bool isValidation) {
       "brand_id INT)");
   tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
   Appender b2t2Appender(dconn, "TASK_NEW_B2_TEMPTABLE_2");
+
+  docStart = system_clock::now();
+  dconn.Query(R"(
+    CREATE TEMP TABLE DOC_INTERM AS
+    SELECT doc_make('{"total_price": ' || doc_get('total_price', order_.data) || ',"order_line": ' || doc_get('order_line', order_.data) || ',"order_.order_id": ' || doc_get('order_.order_id', order_.data) || ',"B1.order_id": ' || doc_get('B1.order_id', B1.data) || ',"customer_id": ' ||     doc_get('customer_id', order_.data) || ',"product_id": ' || doc_get('product_id', B1.data) || ',"rating": ' || doc_get('rating', B1.data) || ',"order_date": ' || doc_get('order_date', order_.data) || ',"feedback": ' || doc_get('feedback', B1.data) || '}')::VPack AS data FROM (SELECT * FROM review WHERE doc_get_int32('rating', review.data) = 5) AS B1 JOIN order_ ON doc_get_string('order_id', B1.data) = doc_get_string('order_id', order_.data)
+  )");
+
+  auto res = dconn.Query(R"(
+    SELECT doc_get_string('customer_id', data) AS customer_id, doc_get_string('product_id', data) AS product_id 
+    FROM DOC_INTERM
+  )");
+  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
   // communication cost here
   auto resChunk = res->Fetch();
@@ -207,16 +210,19 @@ void T2(int SF, bool isValidation) {
       "CREATE TEMPORARY TABLE Rating_history("
       "customer_id varchar(20),"
       "product_id CHAR(10),"
-      "rating int)");
+      "rating double)");
   tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
   docStart = system_clock::now();
+  dconn.Query(R"(
+    CREATE TEMP TABLE DOC_INTERM AS
+    SELECT doc_make('{"customer_id": ' || doc_get('customer_id', data) || ',"product_id": ' || doc_get('product_id', data) || ',"rating": ' || doc_get('rating', data)::DOUBLE || '}')::VPACK AS data FROM (SELECT doc_make('{"total_price": ' || doc_get('total_price', order_.data) || ',"order_line": ' || doc_get('order_line', order_.data) || ',"order_.order_id": ' || doc_get('order_.order_id', order_.data) || ',"customer_id": ' || doc_get('customer_id', order_.data) || ',"order_date": ' || doc_get('order_date', order_.data) || ',"feedback": ' || doc_get('feedback', review.data) || ',"review.order_id": ' || doc_get('review.order_id', review.data) || ',"rating": ' || doc_get('rating', review.data) || ',"product_id": ' || doc_get('product_id', review.data) || '}')::VPack AS data FROM review JOIN order_ ON doc_get_string('order_id', review.data) = doc_get_string('order_id', order_.data)) AS A1
+  )");
+
   auto res = dconn.Query(R"(
-    SELECT doc_get_string('customer_id', data) AS customer_id, doc_get_string('product_id', data) AS product_id, AVG(doc_get_double('rating', data))::INTEGER AS rating FROM (
-        SELECT doc_make('{"customer_id": ' || doc_get('customer_id', data) || ',"product_id": ' || doc_get('product_id',     data) || ',"rating": ' || doc_get('rating', data)::DOUBLE || '}')::VPACK AS data FROM (SELECT doc_make('{"total_price": ' || doc_get('total_price', order_.data) || ',"order_line": ' || doc_get('order_line', order_.data) || ',"order_.order_id": ' || doc_get('order_.order_id', order_.data) || ',"customer_id": ' || doc_get('customer_id', order_.data) || ',"order_date": ' || doc_get('order_date', order_.data) || ',"feedback": ' || doc_get('feedback', review.data) || ',"review.order_id": ' || doc_get('review.order_id', review.data) || ',"rating": ' || doc_get('rating', review.data) || ',"product_id": ' || doc_get('product_id', review.data) || '}')::VPack AS data FROM review JOIN order_ ON doc_get_string('order_id', review.data) = doc_get_string('order_id', order_.data)) AS A1
-    )
-        GROUP BY doc_get_string('customer_id', data), doc_get_string('product_id', data)
-        )");
+    SELECT doc_get_string('customer_id', data) AS customer_id, doc_get_string('product_id', data) AS product_id, doc_get_double('rating', data) AS rating 
+    FROM DOC_INTERM;
+  )");
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
   // Conversion cost
@@ -225,7 +231,7 @@ void T2(int SF, bool isValidation) {
   while (resChunk) {
     auto customerIdVec = FlatVector::GetData<string_t>(resChunk->data[0]);
     auto productIdVec = FlatVector::GetData<string_t>(resChunk->data[1]);
-    auto valVec = FlatVector::GetData<int>(resChunk->data[2]);
+    auto valVec = FlatVector::GetData<double>(resChunk->data[2]);
 
     for (int i = 0; i < resChunk->size(); ++i) {
       rhAppender.BeginRow();

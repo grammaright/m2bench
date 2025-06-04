@@ -239,18 +239,20 @@ void t2ConstructX(duckdb::Connection &dconn, int customerSize, int productSize,
 
   // copy data
   auto tblStart = system_clock::now();
-  auto aRes = dconn.Query(
-      "SELECT customer_id_d as person, product_id_d as product, "
-      "rating From Rcustomer, Rproduct, Rating_history Where "
-      "Rating_history.customer_id = Rcustomer.customer_id and "
-      "Rating_history.product_id = Rproduct.product_id");
+  auto aRes = dconn.Query(R"(
+    SELECT customer_id_d as person, product_id_d as product, AVG(rating)::DOUBLE 
+    FROM Rcustomer, Rproduct, Rating_history
+    WHERE Rating_history.customer_id = Rcustomer.customer_id AND
+    Rating_history.product_id = Rproduct.product_id
+    GROUP BY customer_id_d, product_id_d
+  )");
   tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
   auto aChunk = aRes->Fetch();
   while (aChunk) {
     auto customerIdVec = FlatVector::GetData<int>(aChunk->data[0]);
     auto productIdVec = FlatVector::GetData<int>(aChunk->data[1]);
-    auto ratingVec = FlatVector::GetData<int>(aChunk->data[2]);
+    auto ratingVec = FlatVector::GetData<double>(aChunk->data[2]);
 
     for (int i = 0; i < aChunk->size(); ++i) {
       // compute tile coordinates and cell coordinates
@@ -273,7 +275,7 @@ void t2ConstructX(duckdb::Connection &dconn, int customerSize, int productSize,
 
       double *xBuf = (double *)bf_util_get_pagebuf(page);
       uint64_t coord = cellCoords[0] * productSize + cellCoords[1];
-      xBuf[coord] = (double)ratingVec[i];
+      xBuf[coord] = ratingVec[i];
     }
 
     aChunk = aRes->Fetch();

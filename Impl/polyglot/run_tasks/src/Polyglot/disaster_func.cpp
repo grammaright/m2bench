@@ -15,10 +15,10 @@ using namespace prevision;
 using namespace std::chrono;
 using namespace std::chrono::_V2;
 
-void ChunkProcessing(PolyglotConnection &conn,
-                     std::shared_ptr<prevision::ArrayQuery> in, int start,
-                     int end, int farStart, uint64_t &docTime,
-                     uint64_t &arrTime) {
+string ChunkProcessing(PolyglotConnection &conn,
+                       std::shared_ptr<prevision::ArrayQuery> in, int start,
+                       int end, int farStart, uint64_t &docTime,
+                       uint64_t &arrTime) {
   auto &dconn = conn.GetDuckdbConnection();
   auto pvEngine = conn.GetPrevisionEngine();
 
@@ -45,27 +45,26 @@ void ChunkProcessing(PolyglotConnection &conn,
   double *buf = (double *)bf_util_get_pagebuf(page);
 
   auto docStart = system_clock::now();
-
+  static int num = 0;
+  string tblname = "D1_" + to_string(num++);
   dconn
-      .Query(
-          "INSERT INTO D1 VALUES( "
-          "doc_make('{\"longitude\": " +
-          to_string(lon[0]) +
-          ", "
-          "\"latitude\": " +
-          to_string(lat[0]) +
-          ", "
-          "\"timestamp\": " +
-          to_string(ts[0] + start) +
-          ", "
-          "\"pm10_avg\": " +
-          to_string(buf[0]) + "}'))")
+      .Query(R"(
+    CREATE TEMP TABLE )" +
+             tblname + R"( AS 
+    SELECT doc_make('{"timestamp": ' || )" +
+             to_string(ts[0] + start + farStart) +
+             R"( || ', "latitude": ' || )" + to_string(lat[0]) +
+             R"( || ', "longitude": ' || )" + to_string(lon[0]) +
+             R"(|| ', "pm10_avg": ' || )" + to_string(buf[0]) +
+             R"( || '}') AS data
+  )")
       ->Print();
-
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
   arrStart = system_clock::now();
   // unpin buffer
   pvUnpinBuffer(C->getArrayName(), dcoords);
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
+
+  return tblname;
 }

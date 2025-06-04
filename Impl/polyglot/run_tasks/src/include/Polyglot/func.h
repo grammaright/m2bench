@@ -25,7 +25,7 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
                   int adverseEffectSize, uint64_t &tblTime, uint64_t &arrTime);
 std::vector<pair<int, double>> t9GetValues(duckdb::Connection &dconn,
                                            PFpage *page, int id);
-void ChunkProcessing(PolyglotConnection &conn,
-                     std::shared_ptr<prevision::ArrayQuery> in, int start,
-                     int end, int farStart, uint64_t &docTime,
-                     uint64_t &arrTime);
+string ChunkProcessing(PolyglotConnection &conn,
+                       std::shared_ptr<prevision::ArrayQuery> in, int start,
+                       int end, int farStart, uint64_t &docTime,
+                       uint64_t &arrTime);

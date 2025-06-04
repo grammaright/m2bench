@@ -56,30 +56,46 @@ void T14(int SF, bool isValidation) {
 
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
-  docStart = system_clock::now();
-  dconn.Query("CREATE TEMP TABLE D1 (data VPACK)");
-  docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
-
+  std::vector<std::string> tblVec;
   int curr = (a * 8) % start;
-  ChunkProcessing(conn, A, 0, curr - 1, start, docTime, arrTime);
+  tblVec.push_back(
+      ChunkProcessing(conn, A, 0, curr - 1, start, docTime, arrTime));
   while (curr + 8 <= len) {
-    ChunkProcessing(conn, A, curr, curr + 7, start, docTime, arrTime);
+    tblVec.push_back(
+        ChunkProcessing(conn, A, curr, curr + 7, start, docTime, arrTime));
     curr += 8;
   }
-  ChunkProcessing(conn, A, curr, len, start, docTime, arrTime);
+  tblVec.push_back(
+      ChunkProcessing(conn, A, curr, len, start, docTime, arrTime));
 
   docStart = system_clock::now();
+  string unionString;
+  for (int i = 0; i < tblVec.size(); ++i) {
+    string tblName = tblVec[i];
+    unionString += R"(
+      SELECT data FROM (
+        SELECT doc_make('{"date": ' || FLOOR(doc_get('timestamp', data)::INTEGER /8)::INTEGER || ',"timestamp": ' || (doc_get('timestamp', data))::INTEGER || ',"latitude": ' || doc_get('latitude', data) || ',"longitude": ' || doc_get('longitude', data) || ',"pm10_avg": ' || doc_get('pm10_avg', data) || '}')::VPACK AS data FROM )" +
+                   tblName + R"(
+      )
+    )";
+
+    if (i < tblVec.size() - 1) {
+      unionString += " UNION ALL ";
+    }
+  }
+
   auto finalRes = dconn.Query(R"(
+    CREATE TEMP TABLE DOC_RESULT AS
     SELECT data FROM (
-	SELECT doc_make('{"date": ' || doc_get('date', data) || ',"timestamp": ' || doc_get('timestamp', data) || ',"site_id": ' || doc_st_closest_object_id_composite_string('Site_centroid','properties.type',[doc_get('longitude', data)::DOUBLE*0.000216636-118.34501002237936,doc_get('latitude', data)::DOUBLE*0.000172998+34.011898718557454],'building')::INTEGER || '}')::VPACK AS data 
-	FROM (
-		SELECT doc_make('{"date": ' || FLOOR((doc_get('timestamp', data)::INTEGER+5)/8)::INTEGER || ',"timestamp": ' || (doc_get('timestamp', data)::INTEGER+5)::INTEGER || ',"latitude": ' || doc_get('latitude', data) || ',"longitude": ' || doc_get('longitude', data) || ',"pm10_avg": ' || doc_get('pm10_avg', data) ||     '}')::VPACK AS data FROM D1
-	)
-) AS unnamed_12 
-ORDER BY doc_get_int32('date', data)
+      SELECT doc_make('{"date": ' || doc_get('date', data) || ',"timestamp": ' || doc_get('timestamp', data) || ',"site_id": ' || doc_st_closest_object_id_composite_string('Site_centroid','properties.type',[doc_get('longitude', data)::DOUBLE*0.000216636-118.34501002237936,doc_get('latitude', data)::DOUBLE*0.000172998+34.011898718557454],'building')::INTEGER || '}')::VPACK AS data 
+      FROM ( )" + unionString +
+                              R"(
+      )
+    ) AS unnamed_12 
+    ORDER BY doc_get_int32('date', data)
     )");
   if (isValidation) {
-    finalRes->Print();
+    dconn.Query("SELECT doc_make_json(data) FROM DOC_RESULT")->Print();
   }
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
   totalTime =
@@ -200,6 +216,7 @@ void T15(int SF, bool isValidation) {
         ->Print();
   } else {
     dconn.Query(R"(
+    CREATE TEMP TABLE DOC_RES AS
     SELECT doc_make('{"start": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[-118.061443,34.068509],'roadnode')::VARCHAR || ',"end": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[(doc_get('longitude', data)::INTEGER*0.000216636-118.34501002237936)::DOUBLE,(doc_get('latitude', data)::INTEGER*0.000172998+34.011898718557454)::DOUBLE],'roadnode')::VARCHAR || '}')::VPACK AS data FROM B1
     )");
   }
@@ -265,12 +282,17 @@ void T16(int SF, bool isValidation) {
 
   /* B */
   docStart = system_clock::now();
+  string finalPrepare = R"(
+    CREATE TEMP TABLE target_buildings AS
+    SELECT * FROM (
+      SELECT doc_make('{"site_id": ' || doc_get('site_id', data) || ',"longitude": ' || FLOOR((((SUM((doc_get('coordinates', data)::FLOAT[])[1]))/COUNT(*))+118.3450100223)/0.000216636)::INTEGER || ',"latitude": ' || FLOOR((((SUM((doc_get('coordinates', data)::FLOAT[])[2]))/COUNT(*))-34.01189870)/0.000172998)::INTEGER || '}')::VPACK AS data FROM (SELECT doc_insert(data, unnest(doc_get_list('coordinates', data, 3)::VPack[])::VPack, 'coordinates')::VPack AS data FROM (SELECT doc_make('{"site_id": ' || doc_get('site_id', data) || ',"coordinates": ' || doc_get('geometry.coordinates', data) || '}')::VPACK AS data FROM (SELECT * FROM Site WHERE doc_get_string('properties.type', Site.data) = 'building' AND doc_get_string('properties.description', Site.data) = 'school') AS unnamed_3) AS unnamed_4) AS unnamed_5 GROUP BY doc_get('site_id', data)) AS unnamed_6 WHERE 0 <= doc_get_int32('longitude', data) AND doc_get_int32('longitude', data) <= 522 AND 0 <= doc_get_int32('latitude', data) AND doc_get_int32('latitude', data) <= 522
+  )";
   string final = R"(
-    SELECT doc_get_int32('site_id', data), 
-      doc_get_int32('longitude', data), 
-      doc_get_int32('latitude', data) 
-    FROM
-    (SELECT doc_make('{"site_id": ' || doc_get('site_id', data) || ',"longitude": ' || FLOOR((((SUM((doc_get('coordinates', data)::FLOAT[])[1]))/COUNT(*))+118.3450100223)/0.000216636)::INTEGER || ',"latitude": ' || FLOOR((((SUM((doc_get('coordinates', data)::FLOAT[])[2]))/COUNT(*))-34.01189870)/0.000172998)::INTEGER || '}')::VPACK AS data FROM (SELECT doc_insert(data, unnest(doc_get_list('coordinates', data, 3)::VPack[])::VPack, 'coordinates')::VPack AS data FROM (SELECT doc_make('{"site_id": ' || doc_get('site_id', data) || ',"coordinates": ' || doc_get('geometry.coordinates', data) || '}')::VPACK AS data FROM (SELECT * FROM Site WHERE doc_get_string('properties.type', Site.data) = 'building' AND doc_get_string('properties.description', Site.data) = 'school') AS unnamed_3) AS unnamed_4) AS unnamed_5 GROUP BY doc_get('site_id', data)) AS unnamed_6 WHERE 0 <= doc_get_int32('longitude', data) AND doc_get_int32('longitude', data) <= 522 AND 0 <= doc_get_int32('latitude', data) AND doc_get_int32('latitude', data) <= 522
+    SELECT doc_get_int32('site_id', data), doc_get_int32('longitude', data), doc_get_int32('latitude', data)
+    FROM target_buildings
+  )";
+  string createTbl = R"(
+    CREATE TEMP TABLE DOC_RESULT (data VPACK)
   )";
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
@@ -280,10 +302,15 @@ void T16(int SF, bool isValidation) {
   int cnt = 0;
   if (isValidation) {
     docStart = system_clock::now();
+    dconn.Query(finalPrepare);
+    dconn.Query(createTbl);
     auto res = dconn.Query(final);
     docTime +=
         duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
+    cout << A->getArrayName() << endl;
+
+    duckdb::Appender appender(dconn, "DOC_RESULT");
     auto resChunk = res->Fetch();
     while (resChunk) {
       auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
@@ -323,21 +350,37 @@ void T16(int SF, bool isValidation) {
         b2.add("pm10_avg", arangodb::velocypack::Value(buf[idx]));
         b2.close();
 
+        // making builder
         auto s = b2.slice();
+        auto data = HexDump(s);
+
+        // append
+        auto value =
+            duckdb::Value::BLOB((const_data_ptr_t)data.data, data.length);
+        appender.BeginRow();
+        appender.Append(value);
+        appender.EndRow();
+
         if (s.length() > 0) {
           ++cnt;
           cout << "site_id=" << site_id << ", latitude=" << latitude
                << ", longitude=" << longitude << ", val=" << buf[idx] << endl;
         }
       }
+      appender.Flush();
       resChunk = res->Fetch();
     }
   } else {
     docStart = system_clock::now();
+    dconn.Query(finalPrepare);
+    dconn.Query(createTbl);
     auto res = dconn.Query(final);
     docTime +=
         duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
+    cout << A->getArrayName() << endl;
+
+    duckdb::Appender appender(dconn, "DOC_RESULT");
     auto resChunk = res->Fetch();
     while (resChunk) {
       auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
@@ -378,11 +421,21 @@ void T16(int SF, bool isValidation) {
         b2.close();
 
         auto s = b2.slice();
+        auto data = HexDump(s);
+
+        // append
+        auto value =
+            duckdb::Value::BLOB((const_data_ptr_t)data.data, data.length);
+        appender.BeginRow();
+        appender.Append(value);
+        appender.EndRow();
+
         if (s.length() > 0) {
           ++cnt;
         }
       }
 
+      appender.Flush();
       resChunk = res->Fetch();
     }
   }

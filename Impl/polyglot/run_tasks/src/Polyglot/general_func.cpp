@@ -19,8 +19,9 @@ PFpage *pvGetBuffer(string arrName, std::vector<uint64_t> &dcoords,
                     emptytile_template_type_t type) {
   PFpage *page;
   array_key key;
-  key.arrayname = new char[arrName.size()];
+  key.arrayname = new char[arrName.size() + 1];
   memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
+  key.arrayname[arrName.size()] = '\0';
   key.dcoords = dcoords.data();
   key.dim_len = dcoords.size();
   key.emptytile_template = type;
@@ -34,8 +35,9 @@ PFpage *pvGetBuffer(string arrName, std::vector<uint64_t> &dcoords,
 
 void pvUnpinBuffer(string arrName, std::vector<uint64_t> &dcoords) {
   array_key key;
-  key.arrayname = new char[arrName.size()];
+  key.arrayname = new char[arrName.size() + 1];
   memcpy(key.arrayname, arrName.c_str(), arrName.size() * sizeof(char));
+  key.arrayname[arrName.size()] = '\0';
   key.dcoords = dcoords.data();
   key.dim_len = dcoords.size();
   key.emptytile_template = BF_EMPTYTILE_NONE;
