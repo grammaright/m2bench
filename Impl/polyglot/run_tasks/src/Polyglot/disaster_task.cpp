@@ -195,18 +195,16 @@ void T15(int SF, bool isValidation) {
   double *buf = (double *)bf_util_get_pagebuf(page);
 
   docStart = system_clock::now();
-  dconn
-      .Query(
-          "CREATE TEMP TABLE B1 AS "
-          "SELECT doc_make('{\"longitude\": " +
-          to_string(lonBuf[0]) +
-          ", "
-          "\"latitude\": " +
-          to_string(latBuf[0]) +
-          ", "
-          "\"pm10_avg\": " +
-          to_string(buf[0]) + "}') AS data")
-      ->Print();
+  dconn.Query(
+      "CREATE TEMP TABLE B1 AS "
+      "SELECT doc_make('{\"longitude\": " +
+      to_string(lonBuf[0]) +
+      ", "
+      "\"latitude\": " +
+      to_string(latBuf[0]) +
+      ", "
+      "\"pm10_avg\": " +
+      to_string(buf[0]) + "}') AS data");
 
   if (isValidation) {
     dconn
@@ -304,9 +302,9 @@ void T16(int SF, bool isValidation) {
     docStart = system_clock::now();
     dconn.Query(finalPrepare);
     dconn.Query(createTbl);
-    auto res = dconn.Query(final);
     docTime +=
         duration_cast<nanoseconds>(system_clock::now() - docStart).count();
+    auto res = dconn.Query(final);
 
     cout << A->getArrayName() << endl;
 
@@ -374,9 +372,9 @@ void T16(int SF, bool isValidation) {
     docStart = system_clock::now();
     dconn.Query(finalPrepare);
     dconn.Query(createTbl);
-    auto res = dconn.Query(final);
     docTime +=
         duration_cast<nanoseconds>(system_clock::now() - docStart).count();
+    auto res = dconn.Query(final);
 
     cout << A->getArrayName() << endl;
 
