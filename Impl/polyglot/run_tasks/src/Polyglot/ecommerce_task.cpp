@@ -285,13 +285,13 @@ void T2(int SF, bool isValidation) {
   // dconn.Query("CREATE INDEX Rproduct_idx on Rproduct(product_id)");
 
   /* Non-negative matrix factorization */
-  t2ConstructX(dconn, customerSize, productSize, tblTime, arrTime);
+  t2ConstructX(dconn, customerSize, productSize, SF, tblTime, arrTime);
 
   arrStart = system_clock::now();
 
   auto X = prevision::OpenArray("__X");
   auto W = prevision::Full<double>({(uint32_t)customerSize, rank},
-                                   {(uint32_t)customerSize, rank}, 1.0);
+                                   {(uint32_t)1000 * SF, rank}, 1.0);
   auto H =
       prevision::Full<double>({(uint32_t)rank, (uint32_t)productSize},
                               {(uint32_t)rank, (uint32_t)productSize}, 1.0);

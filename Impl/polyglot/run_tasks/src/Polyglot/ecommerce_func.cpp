@@ -72,14 +72,12 @@ void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize,
   /* construct X */
   const char *arrname = "__X";
   int domain[] = {0, personSize - 1, 0, tagSize - 1};
-  int tilesize[] = {personSize, tagSize};
+  int tilesize[] = {1000, tagSize};
   tilestore_datatype_t fm[] = {TILESTORE_FLOAT64};
   storage_util_delete_array(arrname);
   storage_util_create_array(arrname, TILESTORE_DENSE, domain, tilesize, 2, 1,
                             fm, TILESTORE_NOT_NULLABLE);
 
-  // TODO: multiple tiles
-  // assume that there is only one tile
   PFpage *page = NULL;
   uint64_t lastTileCoords[2];
   array_key key;
@@ -114,8 +112,8 @@ void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize,
                                 (uint64_t)tagIdVec[i] % tilesize[1]};
 
       // caching GetBuf() for better performance
-      if (page == NULL || !(tileCoords[0] != lastTileCoords[0] &&
-                            tileCoords[1] != lastTileCoords[1])) {
+      if (page == NULL || !(tileCoords[0] == lastTileCoords[0] &&
+                            tileCoords[1] == lastTileCoords[1])) {
         if (page != NULL) {
           BF_TouchBuf(key);
           BF_UnpinBuf(key);
@@ -123,6 +121,9 @@ void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize,
 
         key.dcoords = tileCoords;
         BF_GetBuf(key, &page);
+
+        lastTileCoords[0] = tileCoords[0];
+        lastTileCoords[1] = tileCoords[1];
       }
 
       double *xBuf = (double *)bf_util_get_pagebuf(page);
@@ -147,13 +148,12 @@ void t0ConstructY(duckdb::Connection &dconn, int personSize,
 
   const char *arrname = "__y";
   int domain[] = {0, personSize - 1, 1, 1};
-  int tilesize[] = {personSize, 1};
+  int tilesize[] = {1000, 1};
   tilestore_datatype_t fm[] = {TILESTORE_FLOAT64};
   storage_util_delete_array(arrname);
   storage_util_create_array(arrname, TILESTORE_DENSE, domain, tilesize, 2, 1,
                             fm, TILESTORE_NOT_NULLABLE);
 
-  // TODO: multiple tiles
   // assume that there is only one tile
   PFpage *page = NULL;
   uint64_t lastTileCoords[2];
@@ -187,8 +187,8 @@ void t0ConstructY(duckdb::Connection &dconn, int personSize,
       uint64_t cellCoords[2] = {(uint64_t)personIdVec[i] % tilesize[0], 0};
 
       // caching GetBuf() for better performance
-      if (page == NULL || !(tileCoords[0] != lastTileCoords[0] &&
-                            tileCoords[1] != lastTileCoords[1])) {
+      if (page == NULL || !(tileCoords[0] == lastTileCoords[0] &&
+                            tileCoords[1] == lastTileCoords[1])) {
         if (page != NULL) {
           BF_TouchBuf(key);
           BF_UnpinBuf(key);
@@ -196,6 +196,9 @@ void t0ConstructY(duckdb::Connection &dconn, int personSize,
 
         key.dcoords = tileCoords;
         BF_GetBuf(key, &page);
+
+        lastTileCoords[0] = tileCoords[0];
+        lastTileCoords[1] = tileCoords[1];
       }
 
       double *yBuf = (double *)bf_util_get_pagebuf(page);
@@ -214,18 +217,17 @@ void t0ConstructY(duckdb::Connection &dconn, int personSize,
 }
 
 void t2ConstructX(duckdb::Connection &dconn, int customerSize, int productSize,
-                  uint64_t &tblTime, uint64_t &arrTime) {
+                  int SF, uint64_t &tblTime, uint64_t &arrTime) {
   auto arrStart = system_clock::now();
   /* construct X */
   const char *arrname = "__X";
   int domain[] = {0, customerSize - 1, 0, productSize - 1};
-  int tilesize[] = {customerSize, productSize};
+  int tilesize[] = {1000 * SF, productSize};
   tilestore_datatype_t fm[] = {TILESTORE_FLOAT64};
   storage_util_delete_array(arrname);
   storage_util_create_array(arrname, TILESTORE_DENSE, domain, tilesize, 2, 1,
                             fm, TILESTORE_NOT_NULLABLE);
 
-  // TODO: multiple tiles
   // assume that there is only one tile
   PFpage *page = NULL;
   uint64_t lastTileCoords[2];
@@ -262,8 +264,8 @@ void t2ConstructX(duckdb::Connection &dconn, int customerSize, int productSize,
                                 (uint64_t)productIdVec[i] % tilesize[1]};
 
       // caching GetBuf() for better performance
-      if (page == NULL || !(tileCoords[0] != lastTileCoords[0] &&
-                            tileCoords[1] != lastTileCoords[1])) {
+      if (page == NULL || !(tileCoords[0] == lastTileCoords[0] &&
+                            tileCoords[1] == lastTileCoords[1])) {
         if (page != NULL) {
           BF_TouchBuf(key);
           BF_UnpinBuf(key);
@@ -271,6 +273,9 @@ void t2ConstructX(duckdb::Connection &dconn, int customerSize, int productSize,
 
         key.dcoords = tileCoords;
         BF_GetBuf(key, &page);
+
+        lastTileCoords[0] = tileCoords[0];
+        lastTileCoords[1] = tileCoords[1];
       }
 
       double *xBuf = (double *)bf_util_get_pagebuf(page);

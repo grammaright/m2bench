@@ -18,7 +18,7 @@ void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize,
 void t0ConstructY(duckdb::Connection &dconn, int personSize,
                   int favoriteBrandId, uint64_t &tblTime, uint64_t &arrTime);
 void t2ConstructX(duckdb::Connection &dconn, int customerSize, int productSize,
-                  uint64_t &tblTime, uint64_t &arrTime);
+                  int SF, uint64_t &tblTime, uint64_t &arrTime);
 
 void t9_invnorm(Chunk &opnd, Chunk &result);
 void t9ConstructD(duckdb::Connection &dconn, int drugSize,

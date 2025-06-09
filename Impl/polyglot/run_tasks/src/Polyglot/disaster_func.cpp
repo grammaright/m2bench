@@ -26,7 +26,7 @@ string ChunkProcessing(PolyglotConnection &conn,
 
   std::vector<uint32_t> _begin = {(uint32_t)start, 0, 0},
                         _end = {(uint32_t)end + 1, 523, 523},
-                        _tilesize = {(uint32_t)end + 1 - start, 523, 523};
+                        _tilesize = {(uint32_t)end + 1 - start, 60, 60};
 
   auto B = prevision::Subarray(in, {_begin, _end}, _tilesize);
   auto C = prevision::Topk(B, prevision::TopkType::MAX, 1);

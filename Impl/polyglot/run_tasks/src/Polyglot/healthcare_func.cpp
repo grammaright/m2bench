@@ -93,13 +93,12 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
 
   const char *arrname = "__D";
   int domain[] = {0, drugSize - 1, 0, adverseEffectSize - 1};
-  int tilesize[] = {drugSize, adverseEffectSize};
+  int tilesize[] = {1500, 9000};
   tilestore_datatype_t fm[] = {TILESTORE_FLOAT64};
   storage_util_delete_array(arrname);
   storage_util_create_array(arrname, TILESTORE_SPARSE_CSR, domain, tilesize, 2,
                             1, fm, TILESTORE_NOT_NULLABLE);
 
-  // TODO: multiple tiles
   // assume that there is only one tile
   PFpage *page = NULL;
   uint64_t lastTileCoords[2];
@@ -134,8 +133,8 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
                            aeVec[i] % (int)tilesize[1]};
 
       // caching GetBuf() for better performance
-      if (page == NULL || !(tileCoords[0] != lastTileCoords[0] &&
-                            tileCoords[1] != lastTileCoords[1])) {
+      if (page == NULL || !(tileCoords[0] == lastTileCoords[0] &&
+                            tileCoords[1] == lastTileCoords[1])) {
         if (page != NULL) {
           BF_TouchBuf(key);
           BF_UnpinBuf(key);
@@ -143,6 +142,9 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
 
         key.dcoords = tileCoords;
         BF_GetBuf(key, &page);
+
+        lastTileCoords[0] = tileCoords[0];
+        lastTileCoords[1] = tileCoords[1];
       }
 
       // resize if small page
@@ -181,7 +183,7 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
       ((adverseEffectSize + tilesize[1] - 1) / tilesize[1]);
   // iterate over tiles
   for (uint64_t idx = 0; idx < totalNumTiles; idx++) {
-    uint64_t tileCoords[2] = {idx / tilesize[1], idx % tilesize[1]};
+    uint64_t tileCoords[2] = {idx / 10, idx % 10};
     key.dcoords = tileCoords;
     key.emptytile_template = BF_EMPTYTILE_NONE;
     BF_GetBuf(key, &page);
@@ -191,7 +193,7 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
     }
 
     uint64_t *indptr = (uint64_t *)bf_util_pagebuf_get_coords(page, 0);
-    for (int i = 1; i < drugSize + 1; i++) {
+    for (int i = 1; i < 1501; i++) {
       indptr[i] += indptr[i - 1];
     }
 
