@@ -157,10 +157,10 @@ void T9(int SF, bool isValidation) {
           auto res = ReadCell(E->getArrayName(), {(uint32_t)id, (uint32_t)j});
           if (res.valDouble == 0) continue;
 
-            auto a = dconn.Query("SELECT drug FROM Rdrug WHERE drug_d = " +
+          auto a = dconn.Query("SELECT drug FROM Rdrug WHERE drug_d = " +
                                to_string(j));
-            auto ar = a->Fetch();
-            auto av = FlatVector::GetData<int>(ar->data[0]);
+          auto ar = a->Fetch();
+          auto av = FlatVector::GetData<int>(ar->data[0]);
           cout << oid << "," << av[0] << "," << res.valDouble << endl;
           resCnt++;
         }

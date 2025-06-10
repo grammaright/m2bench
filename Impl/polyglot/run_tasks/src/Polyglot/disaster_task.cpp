@@ -41,7 +41,8 @@ void T14(int SF, bool isValidation) {
 
   std::vector<uint32_t> _begin = {(uint32_t)5 * SF, 0, 0},
                         _end = {(uint32_t)10 * SF + 1, 523, 523},
-                        _tilesize = {(uint32_t)10 * SF + 1 - (5 * SF), 60, 60};
+                        _tilesize = {(uint32_t)10 * SF + 1 - (5 * SF), 523,
+                                     523};
   auto A1 = prevision::Subarray(pm10, {_begin, _end}, _tilesize);
   auto A = prevision::WindowAvg(A1, {1, 5, 5});
 
@@ -133,7 +134,7 @@ void T15(int SF, bool isValidation) {
 
   std::vector<uint32_t> _begin = {(uint32_t)Z1, 0, 0},
                         _end = {(uint32_t)Z2 + 1, 523, 523},
-                        _tilesize = {(uint32_t)Z2 + 1 - Z1, 60, 60};
+                        _tilesize = {(uint32_t)Z2 + 1 - Z1, 523, 523};
 
   auto A1 = prevision::Subarray(pm10, {_begin, _end}, _tilesize);
   auto A2 = prevision::Stack(prevision::Sum(A1, {1, 2}),
@@ -144,7 +145,7 @@ void T15(int SF, bool isValidation) {
   //   PreVision, so we use WindowCustom to calculate the average value.
   // The array output is double type, so the sum of average is store in the
   //   output cells and the count value is accumulated in the vector outside.
-  uint64_t lowestDimSize = 9;  // ceil(523 / 60)
+  uint64_t lowestDimSize = 1;  // ceil(523 / 60)
   unordered_map<uint64_t, std::vector<int>> count;
   auto A = WindowCustom(
       A2, {5, 5}, std::vector<tilestore_datatype_t>{TILESTORE_FLOAT64},
@@ -263,7 +264,7 @@ void T16(int SF, bool isValidation) {
   // filter: timestamp >= Z1 AND timestamp <= Z2
   std::vector<uint32_t> _begin = {(uint32_t)Z1, 0, 0},
                         _end = {(uint32_t)Z2 + 1, 523, 523},
-                        _tilesize = {(uint32_t)Z2 + 1 - Z1, 60, 60};
+                        _tilesize = {(uint32_t)Z2 + 1 - Z1, 523, 523};
   auto ta1 = prevision::Subarray(pm10, {_begin, _end}, _tilesize);
   // AVG(pm10) AND GROUP BY latitude, longitude
   auto A = prevision::Avg(ta1, {1, 2});
