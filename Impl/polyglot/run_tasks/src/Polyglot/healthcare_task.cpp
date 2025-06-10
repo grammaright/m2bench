@@ -153,26 +153,16 @@ void T9(int SF, bool isValidation) {
         auto id = drugVec[i];
         auto oid = originalDrugIdVec[i];
 
-        uint64_t colTileSize = drugSize;
-        uint64_t colNumTiles = (drugSize + drugSize - 1) / colTileSize;
-        for (uint64_t colTileIdx = 0; colTileIdx < colNumTiles; colTileIdx++) {
-          std::vector<uint64_t> dcoords = {0, colTileIdx};
-          auto page =
-              pvGetBuffer(E->getArrayName(), dcoords, BF_EMPTYTILE_NONE);
+        for (int j = 0; j < drugSize; ++j) {
+          auto res = ReadCell(E->getArrayName(), {(uint32_t)id, (uint32_t)j});
+          if (res.valDouble == 0) continue;
 
-          auto val = t9GetValues(dconn, page, id);
-          resCnt += val.size();  // not to be eliminated
-          for (auto &item : val) {
             auto a = dconn.Query("SELECT drug FROM Rdrug WHERE drug_d = " +
-                                 to_string(item.first));
-
+                               to_string(j));
             auto ar = a->Fetch();
             auto av = FlatVector::GetData<int>(ar->data[0]);
-            cout << oid << "," << item.first << "," << av[0] << ","
-                 << item.second << endl;
-          }
-
-          pvUnpinBuffer(E->getArrayName(), dcoords);
+          cout << oid << "," << av[0] << "," << res.valDouble << endl;
+          resCnt++;
         }
       }
 
@@ -201,21 +191,11 @@ void T9(int SF, bool isValidation) {
         auto id = drugVec[i];
         auto oid = originalDrugIdVec[i];
 
-        uint64_t colTileSize = drugSize;
-        uint64_t colNumTiles = (drugSize + drugSize - 1) / colTileSize;
-        for (uint64_t colTileIdx = 0; colTileIdx < colNumTiles; colTileIdx++) {
-          std::vector<uint64_t> dcoords = {0, colTileIdx};
-          auto page =
-              pvGetBuffer(E->getArrayName(), dcoords, BF_EMPTYTILE_NONE);
-          if (page == NULL) {
-            pvUnpinBuffer(E->getArrayName(), dcoords);
-            continue;
-          }
+        for (int j = 0; j < drugSize; ++j) {
+          auto res = ReadCell(E->getArrayName(), {(uint32_t)id, (uint32_t)j});
+          if (res.valDouble == 0) continue;
 
-          auto val = t9GetValues(dconn, page, id);
-          resCnt += val.size();  // not to be eliminated
-
-          pvUnpinBuffer(E->getArrayName(), dcoords);
+          if (!isnan(res.valDouble)) resCnt++;
         }
       }
 

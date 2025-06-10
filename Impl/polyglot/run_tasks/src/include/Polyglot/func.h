@@ -8,6 +8,8 @@
 using namespace duckdb;
 using namespace prevision;
 
+const size_t BUFFER_SIZE = 1000;
+
 PFpage *pvGetBuffer(string arrName, std::vector<uint64_t> &dcoords,
                     emptytile_template_type_t type);
 void pvUnpinBuffer(string arrName, std::vector<uint64_t> &dcoords);

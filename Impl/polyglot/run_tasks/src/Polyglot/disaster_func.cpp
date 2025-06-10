@@ -34,15 +34,7 @@ string ChunkProcessing(PolyglotConnection &conn,
 
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
-  // get buffer
-  std::vector<uint64_t> dcoords = {0, 0, 0};
-  PFpage *page = pvGetBuffer(C->getArrayName(), dcoords, BF_EMPTYTILE_NONE);
-
-  // insert data to D1
-  uint64_t *ts = bf_util_pagebuf_get_coords(page, 0);
-  uint64_t *lat = bf_util_pagebuf_get_coords(page, 1);
-  uint64_t *lon = bf_util_pagebuf_get_coords(page, 2);
-  double *buf = (double *)bf_util_get_pagebuf(page);
+  auto res = ReadValidFirstKCellsFromCoo(C->getArrayName(), 1);
 
   auto docStart = system_clock::now();
   static int num = 0;
@@ -52,19 +44,14 @@ string ChunkProcessing(PolyglotConnection &conn,
     CREATE TEMP TABLE )" +
              tblname + R"( AS 
     SELECT doc_make('{"timestamp": ' || )" +
-             to_string(ts[0] + start + farStart) +
-             R"( || ', "latitude": ' || )" + to_string(lat[0]) +
-             R"( || ', "longitude": ' || )" + to_string(lon[0]) +
-             R"(|| ', "pm10_avg": ' || )" + to_string(buf[0]) +
+             to_string(res[0].pos[0] + start + farStart) +
+             R"( || ', "latitude": ' || )" + to_string(res[0].pos[1]) +
+             R"( || ', "longitude": ' || )" + to_string(res[0].pos[2]) +
+             R"(|| ', "pm10_avg": ' || )" + to_string(res[0].valDouble) +
              R"( || '}') AS data
   )")
       ->Print();
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
-
-  arrStart = system_clock::now();
-  // unpin buffer
-  pvUnpinBuffer(C->getArrayName(), dcoords);
-  arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   return tblname;
 }

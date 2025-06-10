@@ -186,24 +186,19 @@ void T15(int SF, bool isValidation) {
 
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
-  std::vector<uint64_t> dcoords = {0, 0};
-  PFpage *page = pvGetBuffer(B1->getArrayName(), dcoords, BF_EMPTYTILE_NONE);
-
-  uint64_t *latBuf = bf_util_pagebuf_get_coords(page, 0);
-  uint64_t *lonBuf = bf_util_pagebuf_get_coords(page, 1);
-  double *buf = (double *)bf_util_get_pagebuf(page);
+  auto res = ReadValidFirstKCellsFromCoo(B1->getArrayName(), 1);
 
   docStart = system_clock::now();
   dconn.Query(
       "CREATE TEMP TABLE B1 AS "
       "SELECT doc_make('{\"longitude\": " +
-      to_string(lonBuf[0]) +
+      to_string(res[0].pos[1]) +
       ", "
       "\"latitude\": " +
-      to_string(latBuf[0]) +
+      to_string(res[0].pos[0]) +
       ", "
       "\"pm10_avg\": " +
-      to_string(buf[0]) + "}') AS data");
+      to_string(res[0].valDouble) + "}') AS data");
 
   if (isValidation) {
     dconn
@@ -218,8 +213,6 @@ void T15(int SF, bool isValidation) {
     )");
   }
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
-
-  pvUnpinBuffer(B1->getArrayName(), dcoords);
 
   totalTime =
       duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
@@ -293,9 +286,6 @@ void T16(int SF, bool isValidation) {
   )";
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
-  std::vector<uint64_t> dcoords = {0, 0};
-  PFpage *page = NULL;
-
   int cnt = 0;
   if (isValidation) {
     docStart = system_clock::now();
@@ -320,24 +310,9 @@ void T16(int SF, bool isValidation) {
         int longitude = longitudeVec[i];
         int latitude = latitudeVec[i];
 
-        uint64_t tileCoords[2] = {(uint64_t)latitude / _tilesize[1],
-                                  (uint64_t)longitude / _tilesize[2]};
-        uint64_t cellCoords[2] = {(uint64_t)latitude % _tilesize[1],
-                                  (uint64_t)longitude % _tilesize[2]};
-
-        if (page == NULL ||
-            !(dcoords[0] == tileCoords[0] && dcoords[1] == tileCoords[1])) {
-          if (page != NULL) {
-            pvUnpinBuffer(A->getArrayName(), dcoords);
-          }
-          dcoords[0] = tileCoords[0];
-          dcoords[1] = tileCoords[1];
-          page = pvGetBuffer(A->getArrayName(), dcoords, BF_EMPTYTILE_NONE);
-        }
-
-        double *buf = (double *)bf_util_get_pagebuf(page);
-        uint64_t idx = cellCoords[0] * 60 + cellCoords[1];
-        if (bf_util_is_cell_null(page, idx)) continue;
+        auto res = ReadCell(A->getArrayName(),
+                            {(uint32_t)latitude, (uint32_t)longitude});
+        if (res.isNull) continue;
 
         // explicit processing
         Builder b2;
@@ -345,7 +320,7 @@ void T16(int SF, bool isValidation) {
         b2.add("site_id", arangodb::velocypack::Value(site_id));
         b2.add("latitude", arangodb::velocypack::Value(latitude));
         b2.add("longitude", arangodb::velocypack::Value(longitude));
-        b2.add("pm10_avg", arangodb::velocypack::Value(buf[idx]));
+        b2.add("pm10_avg", arangodb::velocypack::Value(res.valDouble));
         b2.close();
 
         // making builder
@@ -362,7 +337,8 @@ void T16(int SF, bool isValidation) {
         if (s.length() > 0) {
           ++cnt;
           cout << "site_id=" << site_id << ", latitude=" << latitude
-               << ", longitude=" << longitude << ", val=" << buf[idx] << endl;
+               << ", longitude=" << longitude << ", val=" << res.valDouble
+               << endl;
         }
       }
       appender.Flush();
@@ -390,24 +366,9 @@ void T16(int SF, bool isValidation) {
         int longitude = longitudeVec[i];
         int latitude = latitudeVec[i];
 
-        uint64_t tileCoords[2] = {(uint64_t)latitude / _tilesize[1],
-                                  (uint64_t)longitude / _tilesize[2]};
-        uint64_t cellCoords[2] = {(uint64_t)latitude % _tilesize[1],
-                                  (uint64_t)longitude % _tilesize[2]};
-
-        if (page == NULL ||
-            !(dcoords[0] == tileCoords[0] && dcoords[1] == tileCoords[1])) {
-          if (page != NULL) {
-            pvUnpinBuffer(A->getArrayName(), dcoords);
-          }
-          dcoords[0] = tileCoords[0];
-          dcoords[1] = tileCoords[1];
-          page = pvGetBuffer(A->getArrayName(), dcoords, BF_EMPTYTILE_NONE);
-        }
-
-        double *buf = (double *)bf_util_get_pagebuf(page);
-        uint64_t idx = cellCoords[0] * 60 + cellCoords[1];
-        if (bf_util_is_cell_null(page, idx)) continue;
+        auto res = ReadCell(A->getArrayName(),
+                            {(uint32_t)latitude, (uint32_t)longitude});
+        if (res.isNull) continue;
 
         // explicit processing
         Builder b2;
@@ -415,7 +376,7 @@ void T16(int SF, bool isValidation) {
         b2.add("site_id", arangodb::velocypack::Value(site_id));
         b2.add("latitude", arangodb::velocypack::Value(latitude));
         b2.add("longitude", arangodb::velocypack::Value(longitude));
-        b2.add("pm10_avg", arangodb::velocypack::Value(buf[idx]));
+        b2.add("pm10_avg", arangodb::velocypack::Value(res.valDouble));
         b2.close();
 
         auto s = b2.slice();
@@ -438,9 +399,6 @@ void T16(int SF, bool isValidation) {
     }
   }
 
-  if (page != NULL) {
-    pvUnpinBuffer(A->getArrayName(), dcoords);
-  }
   cout << "cnt=" << cnt << endl;
 
   totalTime =
