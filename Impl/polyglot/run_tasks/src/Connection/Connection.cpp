@@ -124,3 +124,19 @@ std::unique_ptr<duckdb::Connection>
 PolyglotConnection::CreateDuckdbConnection() {
   return std::make_unique<duckdb::Connection>(*(currentEngine->duckdb));
 }
+
+std::shared_ptr<ISpatialIndex> PolyglotConnection::getSpatialIdx(string name) {
+  if (cachedSpatialIdx.find(name) != cachedSpatialIdx.end()) {
+    return cachedSpatialIdx[name];
+  }
+
+  IStorageManager* diskfile =
+      SpatialIndex::StorageManager::loadDiskStorageManager(name);
+  SpatialIndex::StorageManager::IBuffer* file =
+      SpatialIndex::StorageManager::createNewRandomEvictionsBuffer(
+          *diskfile, INT32_MAX, false);
+  ISpatialIndex* tree = RTree::loadRTree(*file, 1);
+  auto sTree = std::shared_ptr<SpatialIndex::ISpatialIndex>(tree);
+  cachedSpatialIdx[name] = sTree;
+  return sTree;
+}

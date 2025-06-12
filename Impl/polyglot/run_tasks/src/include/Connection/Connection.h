@@ -11,8 +11,10 @@
 
 // From duckdb
 #include "duckdb.hpp"
+#include "spatialindex/SpatialIndex.h"
 
 using namespace std;
+using namespace SpatialIndex;
 
 class PolyglotConnection {
  public:
@@ -28,12 +30,16 @@ class PolyglotConnection {
   static PolyglotConnection* currentEngine;
 
   // this function is allowed only for st_closest_object_id() now
-  static unique_ptr<duckdb::Connection> CreateDuckdbConnection();
+  static std::unique_ptr<duckdb::Connection> CreateDuckdbConnection();
+
+  std::shared_ptr<ISpatialIndex> getSpatialIdx(string name);
 
  private:
-  unique_ptr<prevision::Engine> prevision;
-  unique_ptr<duckdb::DuckDB> duckdb;
-  unique_ptr<duckdb::Connection> duckdbConnection;
+  std::unique_ptr<prevision::Engine> prevision;
+  std::unique_ptr<duckdb::DuckDB> duckdb;
+  std::unique_ptr<duckdb::Connection> duckdbConnection;
+
+  unordered_map<string, std::shared_ptr<ISpatialIndex>> cachedSpatialIdx;
 
   int numThreads;
   bool withPvBfInit = true;

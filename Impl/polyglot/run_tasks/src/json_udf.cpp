@@ -625,65 +625,6 @@ void docMakeJSONVectorized(DataChunk& args, ExpressionState& state,
   }
 }
 
-// void docMakeArrayVectorized(DataChunk& args, ExpressionState& state,
-//                             Vector& result) {
-//   // FIXME: this makes physical_unnest.cpp to crash when the list is empty
-//   // set result
-//   auto result_data = FlatVector::GetData<duckdb::string_t>(result);
-//   auto &childVector = ListVector::GetEntry(result);   // child vector of list
-//   auto listData = ListVector::GetData(result);  // list data
-
-//   // get input
-//   auto &inputVec = args.data[0];
-
-//   // iterate through input
-//   uint64_t accumulatedSize = 0;
-//   for (size_t i = 0; i < args.size(); i++) {
-//     auto val = inputVec.GetValue(i).GetValueUnsafe<std::string>();
-//     auto raw = val.c_str();
-
-//     // 2. velocypack
-//     // get a document from bytes
-//     Slice s((const uint8_t *) raw);
-
-//     if (s.isArray()) {
-//       // iterate through array and construct a BLOB list
-//       std::list<duckdb::Value> elements;
-//       for (auto const& it : ArrayIterator(s)) {
-//         // add
-//         auto data = HexDump(it);
-//         auto value = duckdb::Value::BLOB((const_data_ptr_t) data.data,
-//         data.length); elements.push_back(value);
-//       }
-
-//       // size up the child vector if necessary
-//       auto originalSize = ListVector::GetListSize(result);
-//       if (accumulatedSize + elements.size() > originalSize) {
-//         auto newSize =
-//             originalSize == 0 ? STANDARD_VECTOR_SIZE : originalSize * 2;
-//         childVector.Resize(originalSize, newSize);
-//         ListVector::SetListSize(result, newSize);
-//       }
-
-//       // push to the list
-//       int idx = 0;
-//       for (auto const& it : elements) {
-//         childVector.SetValue(accumulatedSize + idx++, it);
-//       }
-
-//       // update list data
-//       listData[i].offset = accumulatedSize;
-//       listData[i].length = elements.size();
-
-//       accumulatedSize += elements.size();
-//     } else {
-//       FlatVector::SetNull(result, i, true);
-//     }
-//   }
-
-//   ListVector::SetListSize(result, accumulatedSize);
-// }
-
 uint64_t idxOpenTime = 0;
 uint64_t idxGetTime = 0;
 uint64_t idxQueryTime = 0;
@@ -694,14 +635,11 @@ void docStClosestObjectVectorized(DataChunk& args, ExpressionState& state,
   auto& colNameVec = args.data[0];
   auto colName = colNameVec.GetValue(0).GetValue<std::string>();
 
-  // get the index for this exists
+  // get the index
   auto start = std::chrono::high_resolution_clock::now();
   string name = colName + ".sidx";
-  IStorageManager* diskfile = StorageManager::loadDiskStorageManager(name);
-  StorageManager::IBuffer* file =
-      StorageManager::createNewRandomEvictionsBuffer(*diskfile, INT32_MAX,
-                                                     false);
-  ISpatialIndex* tree = RTree::loadRTree(*file, 1);
+  auto engine = PolyglotConnection::GetCurrentEngine();
+  auto tree = engine->getSpatialIdx(name);
   auto end = std::chrono::high_resolution_clock::now();
   idxOpenTime +=
       std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
@@ -782,14 +720,11 @@ void docStClosestObjectIdVectorized(DataChunk& args, ExpressionState& state,
   auto& colNameVec = args.data[0];
   auto colName = colNameVec.GetValue(0).GetValue<std::string>();
 
-  // get the index for this exists
+  // get the index
   auto start = std::chrono::high_resolution_clock::now();
   string name = colName + ".sidx";
-  IStorageManager* diskfile = StorageManager::loadDiskStorageManager(name);
-  StorageManager::IBuffer* file =
-      StorageManager::createNewRandomEvictionsBuffer(*diskfile, INT32_MAX,
-                                                     false);
-  ISpatialIndex* tree = RTree::loadRTree(*file, 1);
+  auto engine = PolyglotConnection::GetCurrentEngine();
+  auto tree = engine->getSpatialIdx(name);
   auto end = std::chrono::high_resolution_clock::now();
   idxOpenTime +=
       std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
@@ -839,7 +774,9 @@ void docStClosestObjectIdVectorized(DataChunk& args, ExpressionState& state,
   std::cerr << "idxQueryTime: " << idxQueryTime << std::endl;
 }
 
-uint64_t idxOpenTime2 = 0;
+uint64_t idxOpenTime21 = 0;
+uint64_t idxOpenTime22 = 0;
+uint64_t idxOpenTime23 = 0;
 uint64_t idxGetTime2 = 0;
 uint64_t idxQueryTime2 = 0;
 
@@ -855,16 +792,13 @@ void docStClosestObjectIdCompositeStrVectorized(DataChunk& args,
   auto eqcondVec = args.data[3];
   auto eqcond = eqcondVec.GetValue(0).GetValue<std::string>();
 
-  // get the index for this exists
+  // get the index
   auto start = std::chrono::high_resolution_clock::now();
   string name = colName + "_" + fieldName + ".sidx" + "/" + eqcond;
-  IStorageManager* diskfile = StorageManager::loadDiskStorageManager(name);
-  StorageManager::IBuffer* file =
-      StorageManager::createNewRandomEvictionsBuffer(*diskfile, INT32_MAX,
-                                                     false);
-  ISpatialIndex* tree = RTree::loadRTree(*file, 1);
+  auto engine = PolyglotConnection::GetCurrentEngine();
+  auto tree = engine->getSpatialIdx(name);
   auto end = std::chrono::high_resolution_clock::now();
-  idxOpenTime2 +=
+  idxOpenTime21 +=
       std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
 
   // get input and output
@@ -906,9 +840,11 @@ void docStClosestObjectIdCompositeStrVectorized(DataChunk& args,
     result_data[i] = (unsigned int)vis.result;
   }
 
-  std::cerr << "idxOpenTime2: " << idxOpenTime2 << std::endl;
-  std::cerr << "idxGetTime2: " << idxGetTime2 << std::endl;
-  std::cerr << "idxQueryTime2: " << idxQueryTime2 << std::endl;
+  std::cerr << "idxOpenTime - 1: " << idxOpenTime21 << std::endl;
+  std::cerr << "idxOpenTime - 2: " << idxOpenTime22 << std::endl;
+  std::cerr << "idxOpenTime - 3: " << idxOpenTime23 << std::endl;
+  std::cerr << "idxGetTime: " << idxGetTime2 << std::endl;
+  std::cerr << "idxQueryTime: " << idxQueryTime2 << std::endl;
 }
 
 void docStClosestObjectCompositeStrVectorized(DataChunk& args,
@@ -923,16 +859,13 @@ void docStClosestObjectCompositeStrVectorized(DataChunk& args,
   auto eqcondVec = args.data[3];
   auto eqcond = eqcondVec.GetValue(0).GetValue<std::string>();
 
-  // get the index for this exists
+  // get the index
   auto start = std::chrono::high_resolution_clock::now();
   string name = colName + "_" + fieldName + ".sidx" + "/" + eqcond;
-  IStorageManager* diskfile = StorageManager::loadDiskStorageManager(name);
-  StorageManager::IBuffer* file =
-      StorageManager::createNewRandomEvictionsBuffer(*diskfile, INT32_MAX,
-                                                     false);
-  ISpatialIndex* tree = RTree::loadRTree(*file, 1);
+  auto engine = PolyglotConnection::GetCurrentEngine();
+  auto tree = engine->getSpatialIdx(name);
   auto end = std::chrono::high_resolution_clock::now();
-  idxOpenTime2 +=
+  idxOpenTime21 +=
       std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
 
   // get input and output
@@ -999,7 +932,9 @@ void docStClosestObjectCompositeStrVectorized(DataChunk& args,
         StringVector::AddStringOrBlob(result, jsonStr.data(), jsonStr.size());
   }
 
-  std::cerr << "idxOpenTime2: " << idxOpenTime2 << std::endl;
-  std::cerr << "idxGetTime2: " << idxGetTime2 << std::endl;
-  std::cerr << "idxQueryTime2: " << idxQueryTime2 << std::endl;
+  std::cerr << "idxOpenTime - 1: " << idxOpenTime21 << std::endl;
+  std::cerr << "idxOpenTime - 2: " << idxOpenTime22 << std::endl;
+  std::cerr << "idxOpenTime - 3: " << idxOpenTime23 << std::endl;
+  std::cerr << "idxGetTime: " << idxGetTime2 << std::endl;
+  std::cerr << "idxQueryTime: " << idxQueryTime2 << std::endl;
 }
