@@ -291,10 +291,14 @@ void T2(int SF, bool isValidation) {
 
   auto X = prevision::OpenArray("__X");
   auto W = prevision::Full<double>({(uint32_t)customerSize, rank},
-                                   {(uint32_t)customerSize, rank}, 1.0);
-  auto H =
-      prevision::Full<double>({(uint32_t)rank, (uint32_t)productSize},
-                              {(uint32_t)rank, (uint32_t)productSize}, 1.0);
+                                   {(uint32_t)2000, rank}, 1.0);
+  auto H = prevision::Full<double>({(uint32_t)rank, (uint32_t)productSize},
+                                   {(uint32_t)rank, (uint32_t)300}, 1.0);
+  // auto W = prevision::Full<double>({(uint32_t)customerSize, rank},
+  //                                  {(uint32_t)customerSize, rank}, 1.0);
+  // auto H =
+  //     prevision::Full<double>({(uint32_t)rank, (uint32_t)productSize},
+  //                             {(uint32_t)rank, (uint32_t)productSize}, 1.0);
 
   std::vector<uint32_t> tDimOrder = {1, 0};
   for (int iter = 0; iter < numIter; iter++) {
@@ -317,6 +321,17 @@ void T2(int SF, bool isValidation) {
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
   totalTime =
       duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
+
+  if (isValidation) {
+    auto res = ReadCell(W->getArrayName(), {0, 0});
+    cout << "{0, 0}=" << res.valDouble << endl;
+    res = ReadCell(W->getArrayName(), {1, 0});
+    cout << "{1, 0}=" << res.valDouble << endl;
+    res = ReadCell(W->getArrayName(), {(uint32_t)customerSize - 2, 0});
+    cout << "{" << customerSize - 2 << ", 0}=" << res.valDouble << endl;
+    res = ReadCell(W->getArrayName(), {(uint32_t)customerSize - 1, 0});
+    cout << "{" << customerSize - 1 << ", 0}=" << res.valDouble << endl;
+  }
 
   cout << "[TASK2] DONE" << endl;
   cout << "totalTime =" << setw(12) << totalTime << " ns" << endl;

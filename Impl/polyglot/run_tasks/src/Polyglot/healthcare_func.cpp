@@ -93,7 +93,7 @@ void t9ConstructD(duckdb::Connection &dconn, int drugSize,
 
   const char *arrname = "__D";
   int domain[] = {0, drugSize - 1, 0, adverseEffectSize - 1};
-  int tilesize[] = {drugSize, adverseEffectSize};
+  int tilesize[] = {1600, 400};
   tilestore_datatype_t fm[] = {TILESTORE_FLOAT64};
   storage_util_delete_array(arrname);
   storage_util_create_array(arrname, TILESTORE_SPARSE_CSR, domain, tilesize, 2,
