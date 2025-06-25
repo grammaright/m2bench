@@ -169,14 +169,39 @@ void T0(int SF, bool isValidation) {
       duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
 
   if (isValidation) {
-    auto res = ReadCell(w->getArrayName(), {0, 0});
-    cout << "{0, 0}=" << res.valDouble << endl;
-    res = ReadCell(w->getArrayName(), {1, 0});
-    cout << "{1, 0}=" << res.valDouble << endl;
-    res = ReadCell(w->getArrayName(), {tagSize - 2, 0});
-    cout << "{" << tagSize - 2 << ", 0}=" << res.valDouble << endl;
-    res = ReadCell(w->getArrayName(), {tagSize - 1, 0});
-    cout << "{" << tagSize - 1 << ", 0}=" << res.valDouble << endl;
+    DoValidation([&]() {
+      if (SF != 1) {
+        cout << "Auto validation is only for SF=1" << endl;
+
+        auto res = ReadCell(w->getArrayName(), {0, 0});
+        cout << "{0, 0}=" << res.valDouble << endl;
+
+        res = ReadCell(w->getArrayName(), {1, 0});
+        cout << "{1, 0}=" << res.valDouble << endl;
+
+        res = ReadCell(w->getArrayName(), {tagSize - 2, 0});
+        cout << "{" << tagSize - 2 << ", 0}=" << res.valDouble << endl;
+
+        res = ReadCell(w->getArrayName(), {tagSize - 1, 0});
+        cout << "{" << tagSize - 1 << ", 0}=" << res.valDouble << endl;
+      } else {
+        auto res = ReadCell(w->getArrayName(), {0, 0});
+        cout << "{0, 0}=" << res.valDouble << endl;
+        DoTest(res.valDouble - 0.8 < 0.001);
+
+        res = ReadCell(w->getArrayName(), {1, 0});
+        cout << "{1, 0}=" << res.valDouble << endl;
+        DoTest(res.valDouble - 0.9861 < 0.001);
+
+        res = ReadCell(w->getArrayName(), {tagSize - 2, 0});
+        cout << "{" << tagSize - 2 << ", 0}=" << res.valDouble << endl;
+        DoTest(res.valDouble - 0.9808 < 0.001);
+
+        res = ReadCell(w->getArrayName(), {tagSize - 1, 0});
+        cout << "{" << tagSize - 1 << ", 0}=" << res.valDouble << endl;
+        DoTest(res.valDouble - 0.9684 < 0.001);
+      }
+    });
   }
 
   cout << "[TASK 0]: DONE" << endl;
@@ -329,15 +354,40 @@ void T2(int SF, bool isValidation) {
   totalTime =
       duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
 
-if (isValidation) {
-    auto res = ReadCell(W->getArrayName(), {0, 0});
-    cout << "{0, 0}=" << res.valDouble << endl;
-    res = ReadCell(W->getArrayName(), {1, 0});
-    cout << "{1, 0}=" << res.valDouble << endl;
-    res = ReadCell(W->getArrayName(), {(uint32_t)customerSize - 2, 0});
-    cout << "{" << customerSize - 2 << ", 0}=" << res.valDouble << endl;
-    res = ReadCell(W->getArrayName(), {(uint32_t)customerSize - 1, 0});
-    cout << "{" << customerSize - 1 << ", 0}=" << res.valDouble << endl;
+  if (isValidation) {
+    DoValidation([&]() {
+      if (SF != 1) {
+        cout << "Auto validation is only for SF=1" << endl;
+
+        auto res = ReadCell(W->getArrayName(), {0, 0});
+        cout << "{0, 0}=" << res.valDouble << endl;
+
+        res = ReadCell(W->getArrayName(), {1, 0});
+        cout << "{1, 0}=" << res.valDouble << endl;
+
+        res = ReadCell(W->getArrayName(), {(uint32_t)customerSize - 2, 0});
+        cout << "{" << customerSize - 2 << ", 0}=" << res.valDouble << endl;
+
+        res = ReadCell(W->getArrayName(), {(uint32_t)customerSize - 1, 0});
+        cout << "{" << customerSize - 1 << ", 0}=" << res.valDouble << endl;
+      } else {
+        auto res = ReadCell(W->getArrayName(), {0, 0});
+        cout << "{0, 0}=" << res.valDouble << endl;
+        DoTest(res.valDouble - 0.9158290030386842 < 0.001);
+
+        res = ReadCell(W->getArrayName(), {1, 0});
+        cout << "{1, 0}=" << res.valDouble << endl;
+        DoTest(res.valDouble - 1.8480049618942054 < 0.001);
+
+        res = ReadCell(W->getArrayName(), {(uint32_t)customerSize - 2, 0});
+        cout << "{" << customerSize - 2 << ", 0}=" << res.valDouble << endl;
+        DoTest(res.valDouble - 1.0484382216217532 < 0.001);
+
+        res = ReadCell(W->getArrayName(), {(uint32_t)customerSize - 1, 0});
+        cout << "{" << customerSize - 1 << ", 0}=" << res.valDouble << endl;
+        DoTest(res.valDouble - 1.1463302766557029 < 0.001);
+      }
+    });
   }
 
   cout << "[TASK2] DONE" << endl;

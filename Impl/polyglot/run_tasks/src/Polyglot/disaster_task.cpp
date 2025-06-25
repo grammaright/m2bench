@@ -94,9 +94,38 @@ void T14(int SF, bool isValidation) {
     ) AS unnamed_12 
     ORDER BY doc_get_int32('date', data)
     )");
+
   if (isValidation) {
     dconn.Query("SELECT doc_make_json(data) FROM DOC_RESULT")->Print();
+
+    auto res = dconn.Query(
+        "SELECT doc_get_int32('date', data), "
+        "doc_get_int32('timestamp', data), doc_get_int32('site_id', data) FROM "
+        "DOC_RESULT");
+    res->Print();
+
+    if (SF != 1) {
+      cout << "Auto validation is only for SF=1" << endl;
+    } else {
+      DoValidation([&]() {
+        DoTest(res->RowCount() == 2);
+
+        auto resChunk = res->Fetch();
+        auto dateVec = FlatVector::GetData<int32_t>(resChunk->data[0]);
+        auto tsVec = FlatVector::GetData<int32_t>(resChunk->data[1]);
+        auto idVec = FlatVector::GetData<int32_t>(resChunk->data[2]);
+
+        DoTest(dateVec[0] == 0);
+        DoTest(tsVec[0] == 7);
+        DoTest(idVec[0] == 11918491);
+
+        DoTest(dateVec[1] == 1);
+        DoTest(tsVec[1] == 8);
+        DoTest(idVec[1] == 11943192);
+      });
+    }
   }
+
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
   totalTime =
       duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
@@ -145,34 +174,34 @@ void T15(int SF, bool isValidation) {
   //   PreVision, so we use WindowCustom to calculate the average value.
   // The array output is double type, so the sum of average is store in the
   //   output cells and the count value is accumulated in the vector outside.
-  uint64_t lowestDimSize = 1;  // ceil(523 / 60)
-  unordered_map<uint64_t, std::vector<int>> count;
+  uint64_t dimSize[] = {
+      (uint64_t)ceil((double)(_end[1] - _begin[1]) / _tilesize[1]),
+      (uint64_t)ceil((double)(_end[2] - _begin[2]) / _tilesize[2])};
+  uint64_t numTiles = dimSize[0] * dimSize[1];
+  std::vector<std::vector<int>> count(
+      numTiles, std::vector<int>(_tilesize[1] * _tilesize[2], 0));
   auto A = WindowCustom(
       A2, {5, 5}, std::vector<tilestore_datatype_t>{TILESTORE_FLOAT64},
-      [&count](Chunk &out) {},  // Nothing to do
-      [&count, lowestDimSize](Chunk &in, uint64_t inIdx, Chunk &out,
-                              uint64_t outIdx) {
+      [&](Chunk &out) {},  // Nothing to do
+      [&](Chunk &in, uint64_t inIdx, Chunk &out, uint64_t outIdx) {
         // accumulate cell value to the output buffer
         uint8_t *inBuf = (uint8_t *)bf_util_get_pagebuf(in.curpage);
-        size_t inDataLen = in.curpage->pagebuf_len / in.curpage->max_idx;
+        size_t cntOffset = sizeof(float) * in.curpage->max_idx;
         double *outBuf = (double *)bf_util_get_pagebuf(out.curpage);
 
         // get count vector
-        uint64_t _1dc = out.tile_coords[0] * lowestDimSize + out.tile_coords[1];
-        if (count.find(_1dc) == count.end()) {
-          count[_1dc] = std::vector<int>(out.curpage->max_idx, 0);
-        }
+        uint64_t _1dc = out.tile_coords[0] * dimSize[1] + out.tile_coords[1];
 
         // the first 4 bytes are the average value and the next 4 bytes are the
         // count value
-        outBuf[outIdx] += *(float *)(inBuf + inDataLen * inIdx);
+        outBuf[outIdx] += *(float *)(inBuf + inIdx * sizeof(float));
         count[_1dc][outIdx] +=
-            *(int *)(inBuf + inDataLen * inIdx + sizeof(float));
+            *(int *)(inBuf + cntOffset + inIdx * sizeof(int));
       },
-      [&count, lowestDimSize](Chunk &out) {
+      [&](Chunk &out) {
         // calculate the average value
         double *outBuf = (double *)bf_util_get_pagebuf(out.curpage);
-        uint64_t _1dc = out.tile_coords[0] * lowestDimSize + out.tile_coords[1];
+        uint64_t _1dc = out.tile_coords[0] * dimSize[1] + out.tile_coords[1];
         for (uint64_t outIdx = 0; outIdx < out.curpage->max_idx; outIdx++) {
           if (bf_util_is_cell_null(out.curpage, outIdx)) {
             continue;
@@ -201,17 +230,37 @@ void T15(int SF, bool isValidation) {
       "\"pm10_avg\": " +
       to_string(res[0].valDouble) + "}') AS data");
 
-  if (isValidation) {
+  if (!isValidation) {
+    dconn.Query(R"(
+    CREATE TEMP TABLE DOC_RES AS
+    SELECT doc_make('{"start": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[-118.061443,34.068509],'roadnode')::VARCHAR || ',"end": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[(doc_get('longitude', data)::INTEGER*0.000216636-118.34501002237936)::DOUBLE,(doc_get('latitude', data)::INTEGER*0.000172998+34.011898718557454)::DOUBLE],'roadnode')::VARCHAR || '}')::VPACK AS data FROM B1
+    )");
+  } else {
     dconn
         .Query(R"(
     SELECT '{"start": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[-118.061443,34.068509],'roadnode')::VARCHAR || ',"end": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[(doc_get('longitude', data)::INTEGER*0.000216636-118.34501002237936)::DOUBLE,(doc_get('latitude', data)::INTEGER*0.000172998+34.011898718557454)::DOUBLE],'roadnode')::VARCHAR || '}' FROM B1
     )")
         ->Print();
-  } else {
-    dconn.Query(R"(
-    CREATE TEMP TABLE DOC_RES AS
-    SELECT doc_make('{"start": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[-118.061443,34.068509],'roadnode')::VARCHAR || ',"end": ' || doc_st_closest_object_composite_string('Site_centroid','properties.type',[(doc_get('longitude', data)::INTEGER*0.000216636-118.34501002237936)::DOUBLE,(doc_get('latitude', data)::INTEGER*0.000172998+34.011898718557454)::DOUBLE],'roadnode')::VARCHAR || '}')::VPACK AS data FROM B1
+
+    auto res = dconn.Query(R"(
+    SELECT  doc_st_closest_object_id_composite_string('Site_centroid','properties.type',[-118.061443,34.068509],'roadnode')::INTEGER, doc_st_closest_object_id_composite_string('Site_centroid','properties.type',[(doc_get('longitude', data)::INTEGER*0.000216636-118.34501002237936)::DOUBLE,(doc_get('latitude', data)::INTEGER*0.000172998+34.011898718557454)::DOUBLE],'roadnode')::INTEGER FROM B1
     )");
+    res->Print();
+
+    if (SF != 1) {
+      cout << "Auto validation is only for SF=1" << endl;
+    } else {
+      DoValidation([&]() {
+        DoTest(res->RowCount() == 1);
+
+        auto resChunk = res->Fetch();
+        auto startVec = FlatVector::GetData<int32_t>(resChunk->data[0]);
+        auto endVec = FlatVector::GetData<int32_t>(resChunk->data[1]);
+
+        DoTest(startVec[0] == 100279313);
+        DoTest(endVec[0] == 100242938);
+      });
+    }
   }
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
@@ -289,62 +338,84 @@ void T16(int SF, bool isValidation) {
 
   int cnt = 0;
   if (isValidation) {
-    docStart = system_clock::now();
-    dconn.Query(finalPrepare);
-    dconn.Query(createTbl);
-    docTime +=
-        duration_cast<nanoseconds>(system_clock::now() - docStart).count();
-    auto res = dconn.Query(final);
-
-    cout << A->getArrayName() << endl;
-    cout << res->RowCount() << endl;
-
-    duckdb::Appender appender(dconn, "DOC_RESULT");
-    auto resChunk = res->Fetch();
-    while (resChunk) {
-      auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
-      auto longitudeVec = FlatVector::GetData<int>(resChunk->data[1]);
-      auto latitudeVec = FlatVector::GetData<int>(resChunk->data[2]);
-
-      for (int i = 0; i < resChunk->size(); ++i) {
-        int site_id = siteIdVec[i];
-        int longitude = longitudeVec[i];
-        int latitude = latitudeVec[i];
-
-        auto res = ReadCell(A->getArrayName(),
-                            {(uint32_t)latitude, (uint32_t)longitude});
-        if (res.isNull) continue;
-
-        // explicit processing
-        Builder b2;
-        b2.add(arangodb::velocypack::Value(ValueType::Object));
-        b2.add("site_id", arangodb::velocypack::Value(site_id));
-        b2.add("latitude", arangodb::velocypack::Value(latitude));
-        b2.add("longitude", arangodb::velocypack::Value(longitude));
-        b2.add("pm10_avg", arangodb::velocypack::Value(res.valDouble));
-        b2.close();
-
-        // making builder
-        auto s = b2.slice();
-        auto data = HexDump(s);
-
-        // append
-        auto value =
-            duckdb::Value::BLOB((const_data_ptr_t)data.data, data.length);
-        appender.BeginRow();
-        appender.Append(value);
-        appender.EndRow();
-
-        if (s.length() > 0) {
-          ++cnt;
-          cout << "site_id=" << site_id << ", latitude=" << latitude
-               << ", longitude=" << longitude << ", val=" << res.valDouble
-               << endl;
-        }
-      }
-      appender.Flush();
-      resChunk = res->Fetch();
+    if (SF != 1) {
+      cout << "Auto validation is only for SF=1" << endl;
     }
+
+    DoValidation([&]() {
+      docStart = system_clock::now();
+      dconn.Query(finalPrepare);
+      dconn.Query(createTbl);
+      docTime +=
+          duration_cast<nanoseconds>(system_clock::now() - docStart).count();
+      auto res = dconn.Query(final);
+
+      cout << A->getArrayName() << endl;
+      cout << res->RowCount() << endl;
+
+      duckdb::Appender appender(dconn, "DOC_RESULT");
+      auto resChunk = res->Fetch();
+      while (resChunk) {
+        auto siteIdVec = FlatVector::GetData<int>(resChunk->data[0]);
+        auto longitudeVec = FlatVector::GetData<int>(resChunk->data[1]);
+        auto latitudeVec = FlatVector::GetData<int>(resChunk->data[2]);
+
+        for (int i = 0; i < resChunk->size(); ++i) {
+          int site_id = siteIdVec[i];
+          int longitude = longitudeVec[i];
+          int latitude = latitudeVec[i];
+
+          auto res = ReadCell(A->getArrayName(),
+                              {(uint32_t)latitude, (uint32_t)longitude});
+          // cout << site_id << "," << latitude << "," << longitude << endl;
+          if (res.isNull) continue;
+
+          // explicit processing
+          Builder b2;
+          b2.add(arangodb::velocypack::Value(ValueType::Object));
+          b2.add("site_id", arangodb::velocypack::Value(site_id));
+          b2.add("latitude", arangodb::velocypack::Value(latitude));
+          b2.add("longitude", arangodb::velocypack::Value(longitude));
+          b2.add("pm10_avg", arangodb::velocypack::Value(res.valDouble));
+          b2.close();
+
+          // making builder
+          auto s = b2.slice();
+          auto data = HexDump(s);
+
+          // append
+          auto value =
+              duckdb::Value::BLOB((const_data_ptr_t)data.data, data.length);
+          appender.BeginRow();
+          appender.Append(value);
+          appender.EndRow();
+
+          if (s.length() > 0) {
+            ++cnt;
+            cout << "site_id=" << site_id << ", latitude=" << latitude
+                 << ", longitude=" << longitude << ", val=" << res.valDouble
+                 << endl;
+
+            if (SF == 1) {
+              // do some of them
+              if (site_id == 6821876)
+                DoTest(res.valDouble - 26 < 0.001);
+              else if (site_id == 11918731)
+                DoTest(res.valDouble - 633.6800000000001 < 0.001);
+              else if (site_id == 11918698)
+                DoTest(res.valDouble - 505.04499999999996 < 0.001);
+              else if (site_id == 11692069)
+                DoTest(res.valDouble - 23.85 < 0.001);
+            }
+          }
+        }
+        appender.Flush();
+        resChunk = res->Fetch();
+      }
+
+      if (SF == 1) DoTest(cnt == 141);
+    });
+
   } else {
     docStart = system_clock::now();
     dconn.Query(finalPrepare);

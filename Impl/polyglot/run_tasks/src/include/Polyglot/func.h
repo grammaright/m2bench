@@ -31,3 +31,21 @@ string ChunkProcessing(PolyglotConnection &conn,
                        std::shared_ptr<prevision::ArrayQuery> in, int start,
                        int end, int farStart, uint64_t &docTime,
                        uint64_t &arrTime);
+
+inline string MakeRed() { return "\033[1;31m"; }
+inline string MakeGreen() { return "\033[1;32m"; }
+inline string MakeBlack() { return "\033[0m"; }
+
+inline void DoTest(bool cond) {
+  if (cond) return;
+  throw runtime_error("Test Failed");
+}
+
+inline void DoValidation(function<void(void)> func) {
+  try {
+    func();
+    cout << MakeGreen() << "Test Passed!" << MakeBlack() << endl;
+  } catch (const std::exception &e) {
+    cout << MakeRed() << "Test Failed!" << MakeBlack() << endl;
+  }
+}

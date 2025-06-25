@@ -133,42 +133,56 @@ void T9(int SF, bool isValidation) {
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
 
   if (isValidation) {
-    tblStart = system_clock::now();
-    auto fRes = dconn.Query(
-        "SELECT DISTINCT Rdrug.drug_d, Rdrug.drug "
-        "FROM Prescription, Rdrug "
-        "WHERE Rdrug.drug = Prescription.drug_id AND "
-        "Prescription.patient_id "
-        "= " +
-        to_string(patientId) + " ORDER BY Rdrug.drug");
-    tblTime +=
-        duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
+    DoValidation([&]() {
+      tblStart = system_clock::now();
+      auto fRes = dconn.Query(
+          "SELECT DISTINCT Rdrug.drug_d, Rdrug.drug "
+          "FROM Prescription, Rdrug "
+          "WHERE Rdrug.drug = Prescription.drug_id AND "
+          "Prescription.patient_id "
+          "= " +
+          to_string(patientId) + " ORDER BY Rdrug.drug");
+      tblTime +=
+          duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
-    auto fResChunk = fRes->Fetch();
-    size_t resCnt = 0;
-    while (fResChunk) {
-      auto drugVec = FlatVector::GetData<int>(fResChunk->data[0]);
-      auto originalDrugIdVec = FlatVector::GetData<int>(fResChunk->data[1]);
-      for (int i = 0; i < fResChunk->size(); ++i) {
-        auto id = drugVec[i];
-        auto oid = originalDrugIdVec[i];
+      auto fResChunk = fRes->Fetch();
+      size_t resCnt = 0;
+      while (fResChunk) {
+        auto drugVec = FlatVector::GetData<int>(fResChunk->data[0]);
+        auto originalDrugIdVec = FlatVector::GetData<int>(fResChunk->data[1]);
+        for (int i = 0; i < fResChunk->size(); ++i) {
+          auto id = drugVec[i];
+          auto oid = originalDrugIdVec[i];
 
-        for (int j = 0; j < drugSize; ++j) {
-          auto res = ReadCell(E->getArrayName(), {(uint32_t)id, (uint32_t)j});
-          if (res.valDouble == 0) continue;
+          for (int j = 0; j < drugSize; ++j) {
+            auto res = ReadCell(E->getArrayName(), {(uint32_t)id, (uint32_t)j});
+            if (res.valDouble == 0) continue;
 
-          auto a = dconn.Query("SELECT drug FROM Rdrug WHERE drug_d = " +
-                               to_string(j));
-          auto ar = a->Fetch();
-          auto av = FlatVector::GetData<int>(ar->data[0]);
-          cout << oid << "," << av[0] << "," << res.valDouble << endl;
-          resCnt++;
+            auto a = dconn.Query("SELECT drug FROM Rdrug WHERE drug_d = " +
+                                 to_string(j));
+            auto ar = a->Fetch();
+            auto av = FlatVector::GetData<int>(ar->data[0]);
+            cout << oid << "," << av[0] << "," << res.valDouble << endl;
+            resCnt++;
+
+            // test some of them
+            if (oid == 252 && av[0] == 2) {
+              DoTest(res.valDouble - 0.11047363533322148 < 0.001);
+            } else if (oid == 916 && av[0] == 330) {
+              DoTest(res.valDouble - 0.1535827232566715 < 0.001);
+            } else if (oid == 1233 && av[0] == 142) {
+              DoTest(res.valDouble - 0.04252432555625622 < 0.001);
+            } else if (oid == 9477 && av[0] == 14731) {
+              DoTest(res.valDouble - 0.15161960871578067 < 0.001);
+            }
+          }
         }
-      }
 
-      fResChunk = fRes->Fetch();
-    }
-    cout << "resCnt: " << resCnt << endl;
+        fResChunk = fRes->Fetch();
+      }
+      cout << "resCnt: " << resCnt << endl;
+      DoTest(resCnt == 10619);
+    });
 
   } else {
     tblStart = system_clock::now();
