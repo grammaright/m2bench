@@ -168,6 +168,17 @@ void T0(int SF, bool isValidation) {
   totalTime =
       duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
 
+  if (isValidation) {
+    auto res = ReadCell(w->getArrayName(), {0, 0});
+    cout << "{0, 0}=" << res.valDouble << endl;
+    res = ReadCell(w->getArrayName(), {1, 0});
+    cout << "{1, 0}=" << res.valDouble << endl;
+    res = ReadCell(w->getArrayName(), {tagSize - 2, 0});
+    cout << "{" << tagSize - 2 << ", 0}=" << res.valDouble << endl;
+    res = ReadCell(w->getArrayName(), {tagSize - 1, 0});
+    cout << "{" << tagSize - 1 << ", 0}=" << res.valDouble << endl;
+  }
+
   cout << "[TASK 0]: DONE" << endl;
   cout << "totalTime =" << setw(12) << totalTime << " ns" << endl;
   cout << "tblTime   =" << setw(12) << tblTime << " ns" << endl;
@@ -317,6 +328,17 @@ void T2(int SF, bool isValidation) {
   arrTime += duration_cast<nanoseconds>(system_clock::now() - arrStart).count();
   totalTime =
       duration_cast<nanoseconds>(system_clock::now() - totalStart).count();
+
+if (isValidation) {
+    auto res = ReadCell(W->getArrayName(), {0, 0});
+    cout << "{0, 0}=" << res.valDouble << endl;
+    res = ReadCell(W->getArrayName(), {1, 0});
+    cout << "{1, 0}=" << res.valDouble << endl;
+    res = ReadCell(W->getArrayName(), {(uint32_t)customerSize - 2, 0});
+    cout << "{" << customerSize - 2 << ", 0}=" << res.valDouble << endl;
+    res = ReadCell(W->getArrayName(), {(uint32_t)customerSize - 1, 0});
+    cout << "{" << customerSize - 1 << ", 0}=" << res.valDouble << endl;
+  }
 
   cout << "[TASK2] DONE" << endl;
   cout << "totalTime =" << setw(12) << totalTime << " ns" << endl;
