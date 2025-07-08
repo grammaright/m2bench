@@ -72,7 +72,7 @@ void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize,
   /* construct X */
   const char *arrname = "__X";
   int domain[] = {0, personSize - 1, 0, tagSize - 1};
-  int tilesize[] = {personSize, tagSize};
+  int tilesize[] = {2000, tagSize};
   tilestore_datatype_t fm[] = {TILESTORE_FLOAT64};
   storage_util_delete_array(arrname);
   storage_util_create_array(arrname, TILESTORE_DENSE, domain, tilesize, 2, 1,
@@ -127,7 +127,7 @@ void t0ConstructY(duckdb::Connection &dconn, int personSize,
 
   const char *arrname = "__y";
   int domain[] = {0, personSize - 1, 1, 1};
-  int tilesize[] = {personSize, 1};
+  int tilesize[] = {2000, 1};
   tilestore_datatype_t fm[] = {TILESTORE_FLOAT64};
   storage_util_delete_array(arrname);
   storage_util_create_array(arrname, TILESTORE_DENSE, domain, tilesize, 2, 1,
@@ -182,7 +182,7 @@ void t2ConstructX(duckdb::Connection &dconn, int customerSize, int productSize,
   /* construct X */
   const char *arrname = "__X";
   int domain[] = {0, customerSize - 1, 0, productSize - 1};
-  int tilesize[] = {customerSize, productSize};
+  int tilesize[] = {2000, 300};
   tilestore_datatype_t fm[] = {TILESTORE_FLOAT64};
   storage_util_delete_array(arrname);
   storage_util_create_array(arrname, TILESTORE_DENSE, domain, tilesize, 2, 1,

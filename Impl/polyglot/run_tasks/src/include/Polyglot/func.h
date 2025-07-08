@@ -22,7 +22,6 @@ void t0ConstructY(duckdb::Connection &dconn, int personSize,
 void t2ConstructX(duckdb::Connection &dconn, int customerSize, int productSize,
                   int SF, uint64_t &tblTime, uint64_t &arrTime);
 
-void t9_invnorm(Chunk &opnd, Chunk &result);
 void t9ConstructD(duckdb::Connection &dconn, int drugSize,
                   int adverseEffectSize, uint64_t &tblTime, uint64_t &arrTime);
 std::vector<pair<int, double>> t9GetValues(duckdb::Connection &dconn,

@@ -41,8 +41,8 @@ void T14(int SF, bool isValidation) {
 
   std::vector<uint32_t> _begin = {(uint32_t)5 * SF, 0, 0},
                         _end = {(uint32_t)10 * SF + 1, 523, 523},
-                        _tilesize = {(uint32_t)10 * SF + 1 - (5 * SF), 523,
-                                     523};
+                        _tilesize = {(uint32_t)10 * SF + 1 - (5 * SF), 100,
+                                     100};
   auto A1 = prevision::Subarray(pm10, {_begin, _end}, _tilesize);
   auto A = prevision::WindowAvg(A1, {1, 5, 5});
 
@@ -163,7 +163,7 @@ void T15(int SF, bool isValidation) {
 
   std::vector<uint32_t> _begin = {(uint32_t)Z1, 0, 0},
                         _end = {(uint32_t)Z2 + 1, 523, 523},
-                        _tilesize = {(uint32_t)Z2 + 1 - Z1, 523, 523};
+                        _tilesize = {(uint32_t)Z2 + 1 - Z1, 100, 100};
 
   auto A1 = prevision::Subarray(pm10, {_begin, _end}, _tilesize);
   auto A2 = prevision::Stack(prevision::Sum(A1, {1, 2}),
@@ -313,7 +313,7 @@ void T16(int SF, bool isValidation) {
   // filter: timestamp >= Z1 AND timestamp <= Z2
   std::vector<uint32_t> _begin = {(uint32_t)Z1, 0, 0},
                         _end = {(uint32_t)Z2 + 1, 523, 523},
-                        _tilesize = {(uint32_t)Z2 + 1 - Z1, 523, 523};
+                        _tilesize = {(uint32_t)Z2 + 1 - Z1, 100, 100};
   auto ta1 = prevision::Subarray(pm10, {_begin, _end}, _tilesize);
   // AVG(pm10) AND GROUP BY latitude, longitude
   auto A = prevision::Avg(ta1, {1, 2});

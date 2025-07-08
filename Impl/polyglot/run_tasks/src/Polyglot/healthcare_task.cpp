@@ -122,8 +122,7 @@ void T9(int SF, bool isValidation) {
 
   std::vector<uint32_t> tDimOrder = {1, 0};
   auto E1 = prevision::Matmul(D, prevision::Transpose(D, tDimOrder));
-  auto E2 =
-      prevision::Map(E1, t9_invnorm, {TILESTORE_FLOAT64}, TILESTORE_SPARSE_CSR);
+  auto E2 = prevision::DiagInvsqrt(E1);
   auto E = prevision::Matmul(
       prevision::Transpose(prevision::Matmul(E1, E2), tDimOrder), E2);
 

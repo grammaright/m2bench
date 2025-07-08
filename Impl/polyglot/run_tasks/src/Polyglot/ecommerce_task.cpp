@@ -327,10 +327,9 @@ void T2(int SF, bool isValidation) {
 
   auto X = prevision::OpenArray("__X");
   auto W = prevision::Full<double>({(uint32_t)customerSize, rank},
-                                   {(uint32_t)customerSize, rank}, 1.0);
-  auto H =
-      prevision::Full<double>({(uint32_t)rank, (uint32_t)productSize},
-                              {(uint32_t)rank, (uint32_t)productSize}, 1.0);
+                                   {(uint32_t)2000, rank}, 1.0);
+  auto H = prevision::Full<double>({(uint32_t)rank, (uint32_t)productSize},
+                                   {(uint32_t)rank, (uint32_t)300}, 1.0);
 
   std::vector<uint32_t> tDimOrder = {1, 0};
   for (int iter = 0; iter < numIter; iter++) {
