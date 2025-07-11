@@ -108,6 +108,17 @@ void T9(int SF, bool isValidation) {
         "(Select distinct(adverse_effect) as adverse_effect "
         "from D2A) as t )");
   }
+  // get the size of drug and adverse effects
+  auto iChunk =
+      dconn.Query("SELECT MAX(drug_d)::INTEGER + 1 FROM Rdrug")->Fetch();
+  int actualDrugSize = iChunk->GetValue(0, 0).GetValue<int>();
+  iChunk =
+      dconn
+          .Query(
+              "SELECT MAX(adverse_effect_d)::INTEGER + 1 FROM Radverse_effect")
+          ->Fetch();
+  int actualAdverseEffectSize = iChunk->GetValue(0, 0).GetValue<int>();
+
   tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
   // dconn.Query("CREATE INDEX Rdrug on Rdrug(drug)");
@@ -115,7 +126,8 @@ void T9(int SF, bool isValidation) {
   //     "CREATE INDEX Radverse_effect on Radverse_effect(adverse_effect)");
 
   /* Cosine Similarity */
-  t9ConstructD(dconn, drugSize, adverseEffectSize, tblTime, arrTime);
+  t9ConstructD(dconn, actualDrugSize, actualAdverseEffectSize, tblTime,
+               arrTime);
 
   arrStart = system_clock::now();
   auto D = prevision::OpenArray("__D");
@@ -153,7 +165,7 @@ void T9(int SF, bool isValidation) {
           auto id = drugVec[i];
           auto oid = originalDrugIdVec[i];
 
-          for (int j = 0; j < drugSize; ++j) {
+          for (int j = 0; j < actualDrugSize; ++j) {
             auto res = ReadCell(E->getArrayName(), {(uint32_t)id, (uint32_t)j});
             if (res.valDouble == 0) continue;
 
@@ -182,7 +194,6 @@ void T9(int SF, bool isValidation) {
       cout << "resCnt: " << resCnt << endl;
       DoTest(resCnt == 10619);
     });
-
   } else {
     tblStart = system_clock::now();
     auto fRes = dconn.Query(
@@ -204,7 +215,7 @@ void T9(int SF, bool isValidation) {
         auto id = drugVec[i];
         auto oid = originalDrugIdVec[i];
 
-        for (int j = 0; j < drugSize; ++j) {
+        for (int j = 0; j < actualDrugSize; ++j) {
           auto res = ReadCell(E->getArrayName(), {(uint32_t)id, (uint32_t)j});
           if (res.valDouble == 0) continue;
 
