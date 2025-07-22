@@ -23,10 +23,9 @@ PolyglotConnection::PolyglotConnection(bool withPvBfInit, string dbpath,
 
   // configuration
   numThreads = 1;
-  // numThreads = 16;
   duckdbConnection->Query("SET threads = " + to_string(numThreads));
-  duckdbConnection->Query("SET memory_limit = 100MB;");
-  // duckdbConnection->Query("SET allow_unsigned_extensions = true")->Print();
+  duckdbConnection->Query("SET memory_limit = '16GB';")->Print();
+  duckdbConnection->Query("SELECT current_setting('memory_limit')")->Print();
 
   // VPack type
   duckdbConnection->Query("CREATE TYPE VPACK AS BINARY");
