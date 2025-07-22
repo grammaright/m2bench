@@ -54,13 +54,6 @@ void T0(int SF, bool isValidation) {
   // B
   // Get pairs of customer_id and product_id that the customer gives the
   // highest rating score.
-  tblStart = system_clock::now();
-  dconn.Query(
-      "CREATE TEMPORARY TABLE TASK_NEW_B2_TEMPTABLE_2 ("
-      "person_id INT, "
-      "brand_id INT)");
-  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
-  Appender b2t2Appender(dconn, "TASK_NEW_B2_TEMPTABLE_2");
 
   docStart = system_clock::now();
   dconn.Query(R"(
@@ -69,58 +62,17 @@ void T0(int SF, bool isValidation) {
   )");
   docTime += duration_cast<nanoseconds>(system_clock::now() - docStart).count();
 
-  auto res = dconn.Query(R"(
+  tblStart = system_clock::now();
+  dconn.Query(R"(
+    CREATE TEMP TABLE B3 AS
     SELECT doc_get_string('customer_id', data) AS customer_id, doc_get_string('product_id', data) AS product_id 
     FROM DOC_INTERM
   )");
-
-  // communication cost here
-  auto resChunk = res->Fetch();
-  while (resChunk) {
-    auto customerIdVec = FlatVector::GetData<string_t>(resChunk->data[0]);
-    auto productIdVec = FlatVector::GetData<string_t>(resChunk->data[1]);
-    for (int i = 0; i < resChunk->size(); i++) {
-      auto customerId = customerIdVec[i];
-      auto productId = productIdVec[i];
-      tblStart = system_clock::now();
-      auto cRes =
-          dconn.Query("SELECT person_id FROM Customer WHERE customer_id = '" +
-                      customerId.GetString() + "'");
-      tblTime +=
-          duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
-      auto personId = FlatVector::GetData<int>(cRes->Fetch()->data[0])[0];
-
-      tblStart = system_clock::now();
-      auto pRes =
-          dconn.Query("SELECT brand_id FROM Product WHERE product_id = '" +
-                      productId.GetString() + "'");
-      tblTime +=
-          duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
-      auto brandId = FlatVector::GetData<int>(pRes->Fetch()->data[0])[0];
-
-      b2t2Appender.BeginRow();
-      b2t2Appender.Append(personId);
-      b2t2Appender.Append(brandId);
-      b2t2Appender.EndRow();
-    }
-
-    b2t2Appender.Flush();
-    resChunk = res->Fetch();
-  }
-
-  // Create table for storing aggregated results
-  tblStart = system_clock::now();
-  dconn.Query(
-      "CREATE TEMP TABLE TASK_NEW_B2_TEMPTABLE ("
-      "person_id INT, "
-      "brand_id INT, "
-      "cnt INT)");
-
-  dconn.Query(
-      "INSERT INTO TASK_NEW_B2_TEMPTABLE "
-      "SELECT person_id, brand_id, COUNT(*) "
-      "FROM TASK_NEW_B2_TEMPTABLE_2 "
-      "GROUP BY person_id, brand_id");
+  dconn.Query(R"(
+    CREATE TEMPORARY TABLE TASK_NEW_B2_TEMPTABLE AS 
+    SELECT person_id, brand_id, COUNT(*)::INTEGER AS cnt FROM (SELECT * FROM (SELECT * FROM B3 INNER JOIN product ON product.product_id = B3.product_id) AS B4 INNER JOIN customer ON customer.customer_id = B4.customer_id) AS unnamed_6 GROUP BY person_id, brand_id
+  )");
+  tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
   // C: Find favorite brand per customer
   dconn.Query(
