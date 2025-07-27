@@ -48,7 +48,9 @@ void T0(int SF, bool isValidation) {
       "SELECT p.person_id, h.tag_id "
       "FROM Person p "
       "JOIN Interested_in i ON p.person_id = i._from "
-      "JOIN Hashtag h ON i._to = h.tag_id");
+      "JOIN Hashtag h ON i._to = h.tag_id "
+      "WHERE _to < " +
+      to_string(tagSize) + " AND _from < " + to_string(personSize));
   tblTime += duration_cast<nanoseconds>(system_clock::now() - tblStart).count();
 
   // B
@@ -87,6 +89,9 @@ void T0(int SF, bool isValidation) {
       "FROM TASK_NEW_B2_TEMPTABLE AS t1, "
       "(SELECT person_id, MAX(cnt) AS max_cnt "
       " FROM TASK_NEW_B2_TEMPTABLE "
+      " WHERE person_id < " +
+      to_string(personSize) +
+      " "
       " GROUP BY person_id) AS t2 "
       "WHERE t1.person_id = t2.person_id "
       "AND t1.cnt = t2.max_cnt "

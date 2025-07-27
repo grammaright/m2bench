@@ -95,12 +95,6 @@ void t0ConstructX(duckdb::Connection &dconn, int personSize, int tagSize,
     auto tagIdVec = FlatVector::GetData<int>(aChunk->data[1]);
 
     for (int i = 0; i < aChunk->size(); ++i) {
-      if (personIdVec[i] < 0 || personIdVec[i] >= personSize ||
-          tagIdVec[i] < 0 || tagIdVec[i] >= tagSize) {
-        // the matrix size is fixed even though varying scaling factor
-        continue;
-      }
-
       bufCoords[idx] = {(uint32_t)personIdVec[i], (uint32_t)tagIdVec[i]};
       bufVal[idx] = 1.f;
       ++idx;
@@ -151,11 +145,6 @@ void t0ConstructY(duckdb::Connection &dconn, int personSize,
     auto valVec = FlatVector::GetData<int>(cChunk->data[1]);
 
     for (int i = 0; i < cChunk->size(); ++i) {
-      if (personIdVec[i] < 0 || personIdVec[i] >= personSize) {
-        // the matrix size is fixed even though varying scaling factor
-        continue;
-      }
-
       bufCoords[idx] = {(uint32_t)personIdVec[i], 0};
       bufVal[idx] = valVec[i] == favoriteBrandId ? 1.f : 0.f;
       ++idx;
